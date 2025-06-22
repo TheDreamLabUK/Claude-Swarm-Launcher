@@ -8,7 +8,9 @@
 
 > **Transform complex objectives into coordinated AI agent swarms with a single command.**
 
-A self-contained, zero-configuration script that launches a powerful, containerised AI agent swarm on your local machine. Watch as a team of specialised AI agents work in parallel to achieve your development goals.
+A self-contained, zero-configuration script that launches a powerful, containerised AI agent swarm on your local machine. Watch as a team of specialised AI agents work in parallel to achieve your development goals. This is JUST a container launcher for [Reuven Cohen's orchestrator](https://www.linkedin.com/feed/update/urn:li:activity:7338263351153610753/) which itself leverages [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/cli-reference), and took me no more than an hour to make, the credit is all theirs. 
+
+[Here's the Claude Code Flow repo](https://github.com/ruvnet/claude-code-flow)
 
 ---
 
