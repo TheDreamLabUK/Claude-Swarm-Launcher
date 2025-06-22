@@ -610,161 +610,183 @@ LOG_FILE_NAME="claude-swarm-$(date +%Y%m%d-%H%M%S).log"
 LOG_FILE_PATH_HOST="$SWARM_DIR_PATH/$LOG_FILE_NAME"
 print_status "📝 Logs will be saved to: ${YELLOW}$LOG_FILE_PATH_HOST${NC}"
 
-# Launch container with embedded swarm execution logic
+# Create a temporary script file to avoid complex quoting issues
+TEMP_SCRIPT=$(mktemp)
+trap "rm -f $TEMP_SCRIPT" EXIT
+
+# Write the execution script using a heredoc
+cat > "$TEMP_SCRIPT" << 'SCRIPT_END'
+#!/bin/bash
+# --- Container-side execution script ---
+
+# Explicitly set PATH to include npm global bins and deno
+export PATH="/home/appuser/.npm-global/bin:/home/appuser/.deno/bin:$PATH"
+
+# Verify claude-flow is accessible
+echo "[DEBUG] Current PATH: $PATH"
+echo "[DEBUG] Which claude-flow: $(which claude-flow)"
+echo "[DEBUG] NPM global packages:"
+npm list -g --depth=0
+
+# Extract passed variables
+OBJECTIVE="$1"
+LOG_FILE="$2"
+MODEL_PREFERENCE="$3"
+CONFIG_FILE_PATH="./claude-flow.config.json"
+
+# Model identifiers matching Claude API
+MODEL_OPUS="claude-opus-4-20250514"
+MODEL_SONNET="claude-sonnet-4-20250514"
+
+# Initialize logging with header
+echo "🔄 Claude Flow Swarm Execution Log" | tee "$LOG_FILE"
+echo "====================================" | tee -a "$LOG_FILE"
+echo "Objective: $OBJECTIVE" | tee -a "$LOG_FILE"
+echo "Started at: $(date)" | tee -a "$LOG_FILE"
+echo "Working directory: $(pwd)" | tee -a "$LOG_FILE"
+echo "====================================" | tee -a "$LOG_FILE"
+echo "" | tee -a "$LOG_FILE"
+
+# Function to execute swarm with a specific model
+try_swarm_with_model() {
+    local model_name="$1"
+    local attempt="$2"
+    echo "[$(date +%H:%M:%S)] 🤖 Attempt $attempt: Using model $model_name" | tee -a "$LOG_FILE"
+
+    # Update model in config file
+    if [ -f "$CONFIG_FILE_PATH" ]; then
+        sed -i "s|\(\"model\":\s*\"\)[^\"]*\(\"\)|\1$model_name\2|g" "$CONFIG_FILE_PATH"
+        echo "[$(date +%H:%M:%S)] Updated config to use model: $model_name" | tee -a "$LOG_FILE"
+    else
+        echo "[$(date +%H:%M:%S)] ⚠️  Config file not found. Using swarm defaults." | tee -a "$LOG_FILE"
+    fi
+
+    # Set a generous timeout for individual agent tasks (e.g., 30 minutes)
+    # This is the most important timeout to prevent premature kills.
+    local agent_timeout_ms=1800000 # 30 minutes
+    if [[ "$model_name" == *"opus"* ]]; then
+        # Give Opus even more time
+        agent_timeout_ms=2700000 # 45 minutes
+    fi
+    echo "[$(date +%H:%M:%S)] Setting agent task timeout to ${agent_timeout_ms}ms" | tee -a "$LOG_FILE"
+    claude-flow config set orchestrator.agentTimeoutMs $agent_timeout_ms 2>&1 | tee -a "$LOG_FILE"
+
+    # Also set the terminal command timeout to be equally generous
+    echo "[$(date +%H:%M:%S)] Setting terminal command timeout to 30 minutes" | tee -a "$LOG_FILE"
+    claude-flow config set terminal.commandTimeout 1800000 2>&1 | tee -a "$LOG_FILE"
+
+    # Set the overall swarm timeout in the config as well
+    # This should be longer than any individual step.
+    local swarm_timeout_minutes=180
+    echo "[$(date +%H:%M:%S)] Setting swarm config timeout to ${swarm_timeout_minutes} minutes" | tee -a "$LOG_FILE"
+    claude-flow config set swarm.timeout $swarm_timeout_minutes 2>&1 | tee -a "$LOG_FILE"
+
+    echo "[$(date +%H:%M:%S)] Launching swarm..." | tee -a "$LOG_FILE"
+    echo "------------------------------------" | tee -a "$LOG_FILE"
+
+    # The outer timeout command acts as the final safety net.
+    # It should be slightly longer than the swarm.timeout config (180m).
+    # e.g., timeout 185m ...
+    timeout 185m claude-flow swarm "$OBJECTIVE" 2>&1 | tee -a "$LOG_FILE"
+    local exit_code=${PIPESTATUS[0]}
+
+    echo "------------------------------------" | tee -a "$LOG_FILE"
+    echo "[$(date +%H:%M:%S)] Swarm exited with code: $exit_code" | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+
+    return $exit_code
+}
+
+COMMAND_EXIT_CODE=1
+
+# Memory System Workaround: Clean memory state to prevent hangs
+echo "[$(date +%H:%M:%S)] Applying workaround for potential memory hangs..." | tee -a "$LOG_FILE"
+# This removes the database file, forcing claude-flow to re-initialize it cleanly.
+# It's safe because the swarm builds its context from scratch for each run anyway.
+rm -f ./memory/claude-flow-data.json* # Remove db and journal files
+# We can also use the built-in cleanup command for a safer approach
+claude-flow memory cleanup --older-than 0 --vacuum --dry-run false 2>&1 | tee -a "$LOG_FILE"
+echo "[$(date +%H:%M:%S)] ✅ Memory state cleaned." | tee -a "$LOG_FILE"
+
+# Execute based on model preference
+case "$MODEL_PREFERENCE" in
+    "opus4")
+        try_swarm_with_model "$MODEL_OPUS" "1"
+        COMMAND_EXIT_CODE=$?
+        ;;
+    "sonnet4")
+        try_swarm_with_model "$MODEL_SONNET" "1"
+        COMMAND_EXIT_CODE=$?
+        ;;
+    "auto-fallback"|*)
+        echo "🔄 Auto-fallback mode: Trying Opus 4 first..." | tee -a "$LOG_FILE"
+        try_swarm_with_model "$MODEL_OPUS" "1"
+        COMMAND_EXIT_CODE=$?
+
+        if [ $COMMAND_EXIT_CODE -ne 0 ]; then
+            echo "[$(date +%H:%M:%S)] ⚠️  Opus 4 failed (exit code: $COMMAND_EXIT_CODE)" | tee -a "$LOG_FILE"
+            echo "[$(date +%H:%M:%S)] 🔄 Attempting fallback to Sonnet 4..." | tee -a "$LOG_FILE"
+            sleep 5
+            try_swarm_with_model "$MODEL_SONNET" "2 (fallback)"
+            COMMAND_EXIT_CODE=$?
+        fi
+        ;;
+esac
+
+# Final summary
+echo "" | tee -a "$LOG_FILE"
+echo "====================================" | tee -a "$LOG_FILE"
+echo "SWARM EXECUTION SUMMARY" | tee -a "$LOG_FILE"
+echo "====================================" | tee -a "$LOG_FILE"
+echo "Finished at: $(date)" | tee -a "$LOG_FILE"
+echo "Exit code: $COMMAND_EXIT_CODE" | tee -a "$LOG_FILE"
+
+# Interpret exit code
+if [ $COMMAND_EXIT_CODE -eq 0 ]; then
+    echo "Status: ✅ SUCCESS" | tee -a "$LOG_FILE"
+elif [ $COMMAND_EXIT_CODE -eq 124 ]; then
+    echo "Status: ⏱️  TIMEOUT (185 minutes exceeded)" | tee -a "$LOG_FILE"
+else
+    echo "Status: ❌ FAILED" | tee -a "$LOG_FILE"
+fi
+
+echo "====================================" | tee -a "$LOG_FILE"
+echo "" | tee -a "$LOG_FILE"
+
+# List modified files
+echo "Files modified during swarm execution:" | tee -a "$LOG_FILE"
+echo "------------------------------------" | tee -a "$LOG_FILE"
+# Find files in parent directory, excluding swarm directory
+find .. -name ".claude-flow-swarm" -prune -o -newer "$LOG_FILE" -type f -print 2>/dev/null | \
+    sed "s|^\.\./||" | \
+    sort | \
+    head -20 | \
+    tee -a "$LOG_FILE"
+
+file_count=$(find .. -name ".claude-flow-swarm" -prune -o -newer "$LOG_FILE" -type f -print 2>/dev/null | wc -l)
+if [ $file_count -gt 20 ]; then
+    echo "... and $((file_count - 20)) more files" | tee -a "$LOG_FILE"
+fi
+
+echo "====================================" | tee -a "$LOG_FILE"
+echo "Log file saved in container at: $LOG_FILE" | tee -a "$LOG_FILE"
+SCRIPT_END
+
+# Make the script executable
+chmod +x "$TEMP_SCRIPT"
+
+# Launch container with the script
 docker run $TTY_FLAGS --rm \
   --gpus all \
   -v "$PROJECT_PATH":"/home/appuser/projects/$PROJECT_NAME" \
+  -v "$TEMP_SCRIPT":/tmp/swarm-script.sh:ro \
   -v "claude-config:/home/appuser/.claude" \
   -v "npm-cache:/home/appuser/.npm" \
   $ENV_FLAGS \
   --name $CONTAINER_NAME \
   --workdir "/home/appuser/projects/$PROJECT_NAME/$SWARM_DIR_NAME" \
   $IMAGE_NAME \
-  /bin/bash -c '
-    # --- Container-side execution script ---
-
-    OBJECTIVE="'"$SWARM_OBJECTIVE"'"
-    LOG_FILE="./'"$LOG_FILE_NAME"'"
-    MODEL_PREFERENCE="'"$MODEL_PREFERENCE"'"
-    CONFIG_FILE_PATH="./claude-flow.config.json"
-
-    # Model identifiers matching Claude API
-    MODEL_OPUS="claude-opus-4-20250514"
-    MODEL_SONNET="claude-sonnet-4-20250514"
-
-    # Initialize logging with header
-    echo "🔄 Claude Flow Swarm Execution Log" | tee "$LOG_FILE"
-    echo "====================================" | tee -a "$LOG_FILE"
-    echo "Objective: $OBJECTIVE" | tee -a "$LOG_FILE"
-    echo "Started at: $(date)" | tee -a "$LOG_FILE"
-    echo "Working directory: $(pwd)" | tee -a "$LOG_FILE"
-    echo "====================================" | tee -a "$LOG_FILE"
-    echo "" | tee -a "$LOG_FILE"
-
-    # Function to execute swarm with a specific model
-    try_swarm_with_model() {
-        local model_name="$1"
-        local attempt="$2"
-        echo "[$(date +%H:%M:%S)] 🤖 Attempt $attempt: Using model $model_name" | tee -a "$LOG_FILE"
-
-        # Update model in config file
-        if [ -f "$CONFIG_FILE_PATH" ]; then
-            sed -i "s|\(\"model\":\s*\"\)[^\"]*\(\"\)|\1$model_name\2|g" "$CONFIG_FILE_PATH"
-            echo "[$(date +%H:%M:%S)] Updated config to use model: $model_name" | tee -a "$LOG_FILE"
-        else
-            echo "[$(date +%H:%M:%S)] ⚠️  Config file not found. Using swarm defaults." | tee -a "$LOG_FILE"
-        fi
-
-        # Set a generous timeout for individual agent tasks (e.g., 30 minutes)
-        # This is the most important timeout to prevent premature kills.
-        local agent_timeout_ms=1800000 # 30 minutes
-        if [[ "$model_name" == *"opus"* ]]; then
-            # Give Opus even more time
-            agent_timeout_ms=2700000 # 45 minutes
-        fi
-        echo "[$(date +%H:%M:%S)] Setting agent task timeout to ${agent_timeout_ms}ms" | tee -a "$LOG_FILE"
-        claude-flow config set orchestrator.agentTimeoutMs $agent_timeout_ms 2>&1 | tee -a "$LOG_FILE"
-
-        # Also set the terminal command timeout to be equally generous
-        echo "[$(date +%H:%M:%S)] Setting terminal command timeout to 30 minutes" | tee -a "$LOG_FILE"
-        claude-flow config set terminal.commandTimeout 1800000 2>&1 | tee -a "$LOG_FILE"
-
-        # Set the overall swarm timeout in the config as well
-        # This should be longer than any individual step.
-        local swarm_timeout_minutes=180
-        echo "[$(date +%H:%M:%S)] Setting swarm config timeout to ${swarm_timeout_minutes} minutes" | tee -a "$LOG_FILE"
-        claude-flow config set swarm.timeout $swarm_timeout_minutes 2>&1 | tee -a "$LOG_FILE"
-
-        echo "[$(date +%H:%M:%S)] Launching swarm..." | tee -a "$LOG_FILE"
-        echo "------------------------------------" | tee -a "$LOG_FILE"
-
-        # The outer `timeout` command acts as the final safety net.
-        # It should be slightly longer than the swarm.timeout config (180m).
-        # e.g., timeout 185m ...
-        timeout 185m claude-flow swarm "$OBJECTIVE" 2>&1 | tee -a "$LOG_FILE"
-        local exit_code=${PIPESTATUS[0]}
-
-        echo "------------------------------------" | tee -a "$LOG_FILE"
-        echo "[$(date +%H:%M:%S)] Swarm exited with code: $exit_code" | tee -a "$LOG_FILE"
-        echo "" | tee -a "$LOG_FILE"
-
-        return $exit_code
-    }
-
-    COMMAND_EXIT_CODE=1
-
-    # [NEW] Memory System Workaround: Clean memory state to prevent hangs
-    echo "[$(date +%H:%M:%S)] Applying workaround for potential memory hangs..." | tee -a "$LOG_FILE"
-    # This removes the database file, forcing claude-flow to re-initialize it cleanly.
-    # It's safe because the swarm builds its context from scratch for each run anyway.
-    rm -f ./memory/claude-flow-data.json* # Remove db and journal files
-    # We can also use the built-in cleanup command for a safer approach
-    claude-flow memory cleanup --older-than 0 --vacuum --dry-run false 2>&1 | tee -a "$LOG_FILE"
-    echo "[$(date +%H:%M:%S)] ✅ Memory state cleaned." | tee -a "$LOG_FILE"
-
-    # Execute based on model preference
-    case "$MODEL_PREFERENCE" in
-        "opus4")
-            try_swarm_with_model "$MODEL_OPUS" "1"
-            COMMAND_EXIT_CODE=$?
-            ;;
-        "sonnet4")
-            try_swarm_with_model "$MODEL_SONNET" "1"
-            COMMAND_EXIT_CODE=$?
-            ;;
-        "auto-fallback"|*)
-            echo "🔄 Auto-fallback mode: Trying Opus 4 first..." | tee -a "$LOG_FILE"
-            try_swarm_with_model "$MODEL_OPUS" "1"
-            COMMAND_EXIT_CODE=$?
-
-            if [ $COMMAND_EXIT_CODE -ne 0 ]; then
-                echo "[$(date +%H:%M:%S)] ⚠️  Opus 4 failed (exit code: $COMMAND_EXIT_CODE)" | tee -a "$LOG_FILE"
-                echo "[$(date +%H:%M:%S)] 🔄 Attempting fallback to Sonnet 4..." | tee -a "$LOG_FILE"
-                sleep 5
-                try_swarm_with_model "$MODEL_SONNET" "2 (fallback)"
-                COMMAND_EXIT_CODE=$?
-            fi
-            ;;
-    esac
-
-    # Final summary
-    echo "" | tee -a "$LOG_FILE"
-    echo "====================================" | tee -a "$LOG_FILE"
-    echo "SWARM EXECUTION SUMMARY" | tee -a "$LOG_FILE"
-    echo "====================================" | tee -a "$LOG_FILE"
-    echo "Finished at: $(date)" | tee -a "$LOG_FILE"
-    echo "Exit code: $COMMAND_EXIT_CODE" | tee -a "$LOG_FILE"
-
-    # Interpret exit code
-    if [ $COMMAND_EXIT_CODE -eq 0 ]; then
-        echo "Status: ✅ SUCCESS" | tee -a "$LOG_FILE"
-    elif [ $COMMAND_EXIT_CODE -eq 124 ]; then
-        echo "Status: ⏱️  TIMEOUT (185 minutes exceeded)" | tee -a "$LOG_FILE"
-    else
-        echo "Status: ❌ FAILED" | tee -a "$LOG_FILE"
-    fi
-
-    echo "====================================" | tee -a "$LOG_FILE"
-    echo "" | tee -a "$LOG_FILE"
-
-    # List modified files
-    echo "Files modified during swarm execution:" | tee -a "$LOG_FILE"
-    echo "------------------------------------" | tee -a "$LOG_FILE"
-    # Find files in parent directory, excluding swarm directory
-    find .. -name "'"$SWARM_DIR_NAME"'" -prune -o -newer "$LOG_FILE" -type f -print 2>/dev/null | \
-        sed "s|^\.\./||" | \
-        sort | \
-        head -20 | \
-        tee -a "$LOG_FILE"
-
-    file_count=$(find .. -name "'"$SWARM_DIR_NAME"'" -prune -o -newer "$LOG_FILE" -type f -print 2>/dev/null | wc -l)
-    if [ $file_count -gt 20 ]; then
-        echo "... and $((file_count - 20)) more files" | tee -a "$LOG_FILE"
-    fi
-
-    echo "====================================" | tee -a "$LOG_FILE"
-    echo "Log file saved in container at: $LOG_FILE" | tee -a "$LOG_FILE"
-  '
+  /tmp/swarm-script.sh "$SWARM_OBJECTIVE" "./$LOG_FILE_NAME" "$MODEL_PREFERENCE"
 
 # Final status message
 echo ""
