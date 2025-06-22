@@ -37,6 +37,20 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to clean up old swarm containers
+cleanup_previous_swarms() {
+    print_status "Checking for and cleaning up previous swarm containers..."
+    # Find any container with "claude-swarm-session-" in its name
+    OLD_SWARMS=$(docker ps -a --filter "name=claude-swarm-session-" --format "{{.ID}}")
+    if [ -n "$OLD_SWARMS" ]; then
+        print_warning "Found old swarm containers. Forcibly removing them to prevent conflicts..."
+        docker rm -f $OLD_SWARMS
+        print_status "✅ Previous swarm containers removed."
+    else
+        print_status "✅ No old swarm containers found."
+    fi
+}
+
 # --- Prerequisite and File Creation Functions ---
 
 # Verifies Docker is installed and the daemon is running
@@ -536,6 +550,9 @@ else
   print_status "✅ Image found."
 fi
 
+# Clean up any old, stopped containers from previous runs to prevent conflicts
+cleanup_previous_swarms
+
 # Check if a container with the same name is already running
 if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
     print_warning "A swarm for this project is already running. Attaching to it..."
@@ -638,20 +655,33 @@ docker run $TTY_FLAGS --rm \
             echo "[$(date +%H:%M:%S)] ⚠️  Config file not found. Using swarm defaults." | tee -a "$LOG_FILE"
         fi
 
-        # Adjust timeout based on model
+        # Set a generous timeout for individual agent tasks (e.g., 30 minutes)
+        # This is the most important timeout to prevent premature kills.
+        local agent_timeout_ms=1800000 # 30 minutes
         if [[ "$model_name" == *"opus"* ]]; then
-            echo "[$(date +%H:%M:%S)] Setting Opus timeout: 20 minutes per agent task" | tee -a "$LOG_FILE"
-            claude-flow config set orchestrator.agentTimeoutMs 1200000 2>&1 | tee -a "$LOG_FILE"
-        else
-            echo "[$(date +%H:%M:%S)] Setting Sonnet timeout: 15 minutes per agent task" | tee -a "$LOG_FILE"
-            claude-flow config set orchestrator.agentTimeoutMs 900000 2>&1 | tee -a "$LOG_FILE"
+            # Give Opus even more time
+            agent_timeout_ms=2700000 # 45 minutes
         fi
+        echo "[$(date +%H:%M:%S)] Setting agent task timeout to ${agent_timeout_ms}ms" | tee -a "$LOG_FILE"
+        claude-flow config set orchestrator.agentTimeoutMs $agent_timeout_ms 2>&1 | tee -a "$LOG_FILE"
+
+        # Also set the terminal command timeout to be equally generous
+        echo "[$(date +%H:%M:%S)] Setting terminal command timeout to 30 minutes" | tee -a "$LOG_FILE"
+        claude-flow config set terminal.commandTimeout 1800000 2>&1 | tee -a "$LOG_FILE"
+
+        # Set the overall swarm timeout in the config as well
+        # This should be longer than any individual step.
+        local swarm_timeout_minutes=180
+        echo "[$(date +%H:%M:%S)] Setting swarm config timeout to ${swarm_timeout_minutes} minutes" | tee -a "$LOG_FILE"
+        claude-flow config set swarm.timeout $swarm_timeout_minutes 2>&1 | tee -a "$LOG_FILE"
 
         echo "[$(date +%H:%M:%S)] Launching swarm..." | tee -a "$LOG_FILE"
         echo "------------------------------------" | tee -a "$LOG_FILE"
 
-        # Execute with 30-minute overall timeout
-        timeout 1800s claude-flow swarm "$OBJECTIVE" 2>&1 | tee -a "$LOG_FILE"
+        # The outer `timeout` command acts as the final safety net.
+        # It should be slightly longer than the swarm.timeout config (180m).
+        # e.g., timeout 185m ...
+        timeout 185m claude-flow swarm "$OBJECTIVE" 2>&1 | tee -a "$LOG_FILE"
         local exit_code=${PIPESTATUS[0]}
 
         echo "------------------------------------" | tee -a "$LOG_FILE"
@@ -662,6 +692,15 @@ docker run $TTY_FLAGS --rm \
     }
 
     COMMAND_EXIT_CODE=1
+
+    # [NEW] Memory System Workaround: Clean memory state to prevent hangs
+    echo "[$(date +%H:%M:%S)] Applying workaround for potential memory hangs..." | tee -a "$LOG_FILE"
+    # This removes the database file, forcing claude-flow to re-initialize it cleanly.
+    # It's safe because the swarm builds its context from scratch for each run anyway.
+    rm -f ./memory/claude-flow-data.json* # Remove db and journal files
+    # We can also use the built-in cleanup command for a safer approach
+    claude-flow memory cleanup --older-than 0 --vacuum --dry-run false 2>&1 | tee -a "$LOG_FILE"
+    echo "[$(date +%H:%M:%S)] ✅ Memory state cleaned." | tee -a "$LOG_FILE"
 
     # Execute based on model preference
     case "$MODEL_PREFERENCE" in
@@ -700,7 +739,7 @@ docker run $TTY_FLAGS --rm \
     if [ $COMMAND_EXIT_CODE -eq 0 ]; then
         echo "Status: ✅ SUCCESS" | tee -a "$LOG_FILE"
     elif [ $COMMAND_EXIT_CODE -eq 124 ]; then
-        echo "Status: ⏱️  TIMEOUT (30 minutes exceeded)" | tee -a "$LOG_FILE"
+        echo "Status: ⏱️  TIMEOUT (185 minutes exceeded)" | tee -a "$LOG_FILE"
     else
         echo "Status: ❌ FAILED" | tee -a "$LOG_FILE"
     fi
