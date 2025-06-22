@@ -1,5 +1,7 @@
 # Claude Flow Swarm Launcher 🚀
 
+**HINT** I am about 4 hours into this, I have much to learn, this is likely a very naive use of flow. It'll get better. 
+
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Version](https://img.shields.io/badge/version-1.0.0-informational)
