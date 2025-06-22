@@ -391,7 +391,7 @@ create_config_if_missing() {
     "agentTimeoutMs": 900000,
     "resourceAllocationStrategy": "balanced",
     "defaultAgentConfig": {
-      "model": "claude-3.5-sonnet-20240620",
+      "model": "claude-opus-4-20250514",
       "temperature": 0.7
     }
   },
@@ -413,7 +413,7 @@ create_config_if_missing() {
   },
   "memory": {
     "backend": "hybrid",
-    "cacheSizeMB": 100
+    "cacheSizeMB": 1000
   }
 }
 EOF
@@ -473,13 +473,13 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo "                         - auto: Run swarm non-interactively (default)"
   echo "                         - shell: Start an interactive shell in the container"
   echo "  model                  Model preference (optional):"
-  echo "                         - opus: Use Claude 3 Opus (powerful, slower)"
-  echo "                         - sonnet: Use Claude 3.5 Sonnet (fast, efficient)"
-  echo "                         - auto-fallback: Try Opus, fallback to Sonnet (default)"
+  echo "                         - opus4: Use Claude 4 Opus (most powerful)"
+  echo "                         - sonnet4: Use Claude 4 Sonnet (fast, efficient)"
+  echo "                         - auto-fallback: Try Opus 4, fallback to Sonnet 4 (default)"
   echo ""
   echo "Examples:"
   echo "  $0 my-project \"Refactor the authentication system\""
-  echo "  $0 my-app \"Add comprehensive test coverage\" auto sonnet"
+  echo "  $0 my-app \"Add comprehensive test coverage\" auto sonnet4"
   echo "  $0 website \"Debug the payment integration\" shell"
   echo ""
   echo "Note: Requires Docker and a Claude API key configured in the container."
@@ -518,8 +518,8 @@ if [[ "$MODE" != "auto" && "$MODE" != "shell" ]]; then
 fi
 
 # Validate model preference
-if [[ "$MODEL_PREFERENCE" != "opus" && "$MODEL_PREFERENCE" != "sonnet" && "$MODEL_PREFERENCE" != "auto-fallback" ]]; then
-  print_error "Invalid model preference: $MODEL_PREFERENCE. Must be 'opus', 'sonnet', or 'auto-fallback'."
+if [[ "$MODEL_PREFERENCE" != "opus4" && "$MODEL_PREFERENCE" != "sonnet4" && "$MODEL_PREFERENCE" != "auto-fallback" ]]; then
+  print_error "Invalid model preference: $MODEL_PREFERENCE. Must be 'opus4', 'sonnet4', or 'auto-fallback'."
   exit 1
 fi
 
@@ -629,8 +629,8 @@ docker run $TTY_FLAGS --rm \
     CONFIG_FILE_PATH="./claude-flow.config.json"
 
     # Model identifiers matching Claude API
-    MODEL_OPUS="claude-3-opus-20240229"
-    MODEL_SONNET="claude-3.5-sonnet-20240620"
+    MODEL_OPUS="claude-opus-4-20250514"
+    MODEL_SONNET="claude-sonnet-4-20250514"
 
     # Initialize logging with header
     echo "🔄 Claude Flow Swarm Execution Log" | tee "$LOG_FILE"
@@ -704,22 +704,22 @@ docker run $TTY_FLAGS --rm \
 
     # Execute based on model preference
     case "$MODEL_PREFERENCE" in
-        "opus")
+        "opus4")
             try_swarm_with_model "$MODEL_OPUS" "1"
             COMMAND_EXIT_CODE=$?
             ;;
-        "sonnet")
+        "sonnet4")
             try_swarm_with_model "$MODEL_SONNET" "1"
             COMMAND_EXIT_CODE=$?
             ;;
         "auto-fallback"|*)
-            echo "🔄 Auto-fallback mode: Trying Opus first..." | tee -a "$LOG_FILE"
+            echo "🔄 Auto-fallback mode: Trying Opus 4 first..." | tee -a "$LOG_FILE"
             try_swarm_with_model "$MODEL_OPUS" "1"
             COMMAND_EXIT_CODE=$?
 
             if [ $COMMAND_EXIT_CODE -ne 0 ]; then
-                echo "[$(date +%H:%M:%S)] ⚠️  Opus failed (exit code: $COMMAND_EXIT_CODE)" | tee -a "$LOG_FILE"
-                echo "[$(date +%H:%M:%S)] 🔄 Attempting fallback to Sonnet..." | tee -a "$LOG_FILE"
+                echo "[$(date +%H:%M:%S)] ⚠️  Opus 4 failed (exit code: $COMMAND_EXIT_CODE)" | tee -a "$LOG_FILE"
+                echo "[$(date +%H:%M:%S)] 🔄 Attempting fallback to Sonnet 4..." | tee -a "$LOG_FILE"
                 sleep 5
                 try_swarm_with_model "$MODEL_SONNET" "2 (fallback)"
                 COMMAND_EXIT_CODE=$?
