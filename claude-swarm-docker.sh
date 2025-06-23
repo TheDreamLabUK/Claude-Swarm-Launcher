@@ -391,7 +391,7 @@ create_config_if_missing() {
     "agentTimeoutMs": 900000,
     "resourceAllocationStrategy": "balanced",
     "defaultAgentConfig": {
-      "model": "claude-opus-4-20250514",
+      "model": "claude-sonnet-4-20250514",
       "temperature": 0.7
     }
   },
@@ -460,11 +460,39 @@ EOF
 
 # --- Main Script Logic ---
 
+# Argument parsing
+REBUILD_IMAGE=false
+SHOW_HELP=false
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  key="$1"
+  case $key in
+    -h|--help)
+      SHOW_HELP=true
+      shift # past argument
+      ;;
+    --rebuild)
+      REBUILD_IMAGE=true
+      shift # past argument
+      ;;
+    *)    # unknown option
+      POSITIONAL_ARGS+=("$1") # save it in an array for later
+      shift # past argument
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}" # restore positional args
+
 # Handle help flag
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+if [[ "$SHOW_HELP" = true ]]; then
   echo "Claude Flow Swarm Launcher"
   echo ""
-  echo "Usage: $0 <project_directory_name> \"<swarm_objective>\" [mode] [model]"
+  echo "Usage: $0 [options] <project_directory_name> \"<swarm_objective>\" [mode] [model]"
+  echo ""
+  echo "Options:"
+  echo "  --rebuild              Force a rebuild of the Docker image without using cache."
+  echo "  -h, --help             Show this help message."
   echo ""
   echo "Arguments:"
   echo "  project_directory_name  Name of the project directory (must exist)"
@@ -479,7 +507,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo ""
   echo "Examples:"
   echo "  $0 my-project \"Refactor the authentication system\""
-  echo "  $0 my-app \"Add comprehensive test coverage\" auto sonnet4"
+  echo "  $0 --rebuild my-app \"Add comprehensive test coverage\" auto sonnet4"
   echo "  $0 website \"Debug the payment integration\" shell"
   echo ""
   echo "Note: Requires Docker and a Claude API key configured in the container."
@@ -496,7 +524,7 @@ fi
 PROJECT_NAME=$1
 SWARM_OBJECTIVE=$2
 MODE=${3:-auto}
-MODEL_PREFERENCE=${4:-auto-fallback}
+MODEL_PREFERENCE=${4:-sonnet4}
 PROJECT_PATH="$PARENT_DIR/$PROJECT_NAME"
 CONTAINER_NAME="claude-swarm-session-$PROJECT_NAME"
 
@@ -536,18 +564,26 @@ create_config_if_missing "$CONFIG_FILE_PATH"
 setup_claude_md "$PROJECT_PATH" "$SWARM_DIR_PATH"
 create_swarm_readme "$SWARM_DIR_PATH"
 
-# Build Docker image if it doesn't exist
+# Build Docker image
 print_status "Checking for Docker image: $IMAGE_NAME..."
-if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
-  print_status "Image not found. Building now (this may take a few minutes)..."
-  docker build -t $IMAGE_NAME .
-  if [ $? -ne 0 ]; then
-    print_error "Docker build failed. Please check the Dockerfile and your Docker setup."
-    exit 1
-  fi
-  print_status "✅ Image built successfully."
+if [ "$REBUILD_IMAGE" = true ]; then
+    print_warning "Rebuilding image with --no-cache as requested..."
+    docker build --no-cache -t "$IMAGE_NAME" .
+    if [ $? -ne 0 ]; then
+        print_error "Docker build failed. Please check the Dockerfile and your Docker setup."
+        exit 1
+    fi
+    print_status "✅ Image rebuilt successfully."
+elif [[ "$(docker images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
+    print_status "Image not found. Building now (this may take a few minutes)..."
+    docker build -t "$IMAGE_NAME" .
+    if [ $? -ne 0 ]; then
+        print_error "Docker build failed. Please check the Dockerfile and your Docker setup."
+        exit 1
+    fi
+    print_status "✅ Image built successfully."
 else
-  print_status "✅ Image found."
+    print_status "✅ Image found."
 fi
 
 # Clean up any old, stopped containers from previous runs to prevent conflicts
