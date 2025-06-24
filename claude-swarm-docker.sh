@@ -558,6 +558,7 @@ create_dockerfile_if_missing
 
 # Create the dedicated swarm directory and related files
 mkdir -p "$SWARM_DIR_PATH"
+mkdir -p "$SWARM_DIR_PATH/tmp"
 print_status "Ensured swarm directory exists at: $SWARM_DIR_PATH"
 ensure_gitignore_entry "$PROJECT_PATH"
 create_config_if_missing "$CONFIG_FILE_PATH"
@@ -631,6 +632,7 @@ if [ "$MODE" = "shell" ]; then
     docker run $TTY_FLAGS --rm \
       --gpus all \
       -v "$PROJECT_PATH":"/home/appuser/projects/$PROJECT_NAME" \
+      -v "$SWARM_DIR_PATH/tmp":/tmp \
       -v "claude-config:/home/appuser/.claude" \
       -v "npm-cache:/home/appuser/.npm" \
       $ENV_FLAGS \
@@ -815,6 +817,7 @@ chmod +x "$TEMP_SCRIPT"
 docker run $TTY_FLAGS --rm \
   --gpus all \
   -v "$PROJECT_PATH":"/home/appuser/projects/$PROJECT_NAME" \
+  -v "$SWARM_DIR_PATH/tmp":/tmp \
   -v "$TEMP_SCRIPT":/tmp/swarm-script.sh:ro \
   -v "claude-config:/home/appuser/.claude" \
   -v "npm-cache:/home/appuser/.npm" \
