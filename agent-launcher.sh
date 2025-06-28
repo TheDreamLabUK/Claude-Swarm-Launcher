@@ -2,9 +2,6 @@
 # Unified Agentic Swarm Launcher
 # A self-contained script to launch a multi-agent swarm session in Docker containers.
 # It orchestrates Claude, Codex, and Gemini agents to work on a given task.
-
-# Rename this file to 'agent-launcher.sh' to reflect its new purpose.
-mv claude-swarm-docker.sh agent-launcher.sh
 #
 # Features:
 # - Automatic Docker image building
@@ -15,7 +12,9 @@ mv claude-swarm-docker.sh agent-launcher.sh
 
 # --- Configuration ---
 IMAGE_NAME="claude-dev-env:latest"
-PARENT_DIR=$(pwd)
+# Get the directory where the script is located, so it can be run from anywhere
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PARENT_DIR=$(pwd) # Use the current working directory to find projects
 DOCKERFILE_NAME="Dockerfile"
 SWARM_DIR_NAME=".claude-flow-swarm"
 
@@ -410,7 +409,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \\
-    build-essential git curl wget nano vim zsh unzip python3 python3-pip sudo tmux \\
+    build-essential git curl wget nano vim zsh unzip python3 python3-pip sudo tmux rsync \\
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (v20 LTS)
@@ -594,8 +593,7 @@ if [[ "$SHOW_HELP" = true ]]; then
   echo "Arguments:"
   echo "  project_directory_name  Name of the project directory (optional). If not provided,"
   echo "                          an interactive selection menu will be shown."
-  echo "  The swarm objective is read from 'task.md' (looked for first in the project"
-  echo "  directory, then in the current directory)."
+  echo "  The swarm objective is read from 'multi-agent-build/task.md' within the project directory."
   echo "  mode                   Execution mode (optional):"
   echo "                         - auto: Run swarm non-interactively (default)"
   echo "                         - shell: Start an interactive shell in the container"
@@ -629,22 +627,20 @@ fi
 
 # Set project path now that PROJECT_NAME is determined
 PROJECT_PATH="$PARENT_DIR/$PROJECT_NAME"
+RUNS_DIR_PATH="$PROJECT_PATH/multi-agent-build"
+mkdir -p "$RUNS_DIR_PATH"
 
-# Find task.md: first in project dir, then in parent dir
-if [ -f "$PROJECT_PATH/task.md" ]; then
-    TASK_FILE_PATH="$PROJECT_PATH/task.md"
-    print_status "Found 'task.md' in project directory."
-elif [ -f "$PARENT_DIR/task.md" ]; then
-    TASK_FILE_PATH="$PARENT_DIR/task.md"
-    print_status "Found 'task.md' in launcher directory."
-else
-    print_error "'task.md' not found in project or launcher directory."
+# Find task.md inside the multi-agent-build directory
+TASK_FILE_PATH="$RUNS_DIR_PATH/task.md"
+if [ ! -f "$TASK_FILE_PATH" ]; then
+    print_error "'task.md' not found in '$RUNS_DIR_PATH'."
+    print_warning "Please create a 'task.md' file inside the 'multi-agent-build' directory of your project."
     exit 1
 fi
 
 SWARM_OBJECTIVE=$(<"$TASK_FILE_PATH")
 if [ -z "$SWARM_OBJECTIVE" ]; then
-    print_error "'task.md' is empty. Please provide an objective."
+    print_error "'$TASK_FILE_PATH' is empty. Please provide an objective."
     exit 1
 fi
 PROJECT_PATH="$PARENT_DIR/$PROJECT_NAME"
@@ -684,7 +680,7 @@ check_prerequisites
 check_credentials
 print_api_key_warning
 create_dockerfile_if_missing
-ensure_gitignore_entry "$PROJECT_PATH" "runs/" "Agent run artifacts"
+ensure_gitignore_entry "$PROJECT_PATH" "multi-agent-build/" "Multi-agent build artifacts"
 
 # Build Docker image
 print_status "Checking for Docker image: $IMAGE_NAME..."
@@ -768,7 +764,6 @@ fi
 
 # Handle auto mode - run the multi-agent swarm
 RUN_DIR_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RUNS_DIR_PATH="$PROJECT_PATH/runs"
 RUN_DIR_PATH="$RUNS_DIR_PATH/$RUN_DIR_TIMESTAMP"
 
 print_status "Creating run directory: $RUN_DIR_PATH"
@@ -812,7 +807,7 @@ launch_agent() {
     local container_name="agent-swarm-session-$RUN_DIR_TIMESTAMP-$agent_name"
     local log_file="$agent_workdir/${agent_name}_agent.log"
 
-    print_status "Launching ${agent_name} agent..." | tee -a "$LOG_FILE_PATH_HOST"
+    print_status "Launching ${agent_name} agent..." | tee -a "$LOG_FILE_PATH_HOST" >&2
 
     docker run -d --rm \
       --gpus all \
@@ -827,42 +822,69 @@ launch_agent() {
       "$IMAGE_NAME" \
       bash -c "$agent_command" > "$log_file" 2>&1 &
 
-    echo "$!" # Return the process ID
+    AGENT_PIDS+=($!) # Add the new PID to the global array
 }
 
 # --- Main Orchestration ---
+AGENT_PIDS=() # Initialize an array to hold the PIDs of background agents
+AGENT_NAMES=() # Initialize an array to hold the agent names for logging
+
 print_status "Initializing agent workspaces by copying project files..."
-cp -r "$PROJECT_PATH/." "$CLAUDE_RUN_DIR/"
-cp -r "$PROJECT_PATH/." "$CODEX_RUN_DIR/"
-cp -r "$PROJECT_PATH/." "$GEMINI_RUN_DIR/"
-# The integration run starts with only the original project files
-cp -r "$PROJECT_PATH/." "$INTEGRATION_RUN_DIR/"
+# Use rsync to copy contents and exclude the build directory itself to prevent recursion
+rsync -a --exclude 'multi-agent-build' "$PROJECT_PATH/" "$CLAUDE_RUN_DIR/"
+rsync -a --exclude 'multi-agent-build' "$PROJECT_PATH/" "$CODEX_RUN_DIR/"
+rsync -a --exclude 'multi-agent-build' "$PROJECT_PATH/" "$GEMINI_RUN_DIR/"
+# The integration run starts with a clean copy of the original project
+rsync -a --exclude 'multi-agent-build' "$PROJECT_PATH/" "$INTEGRATION_RUN_DIR/"
 print_status "✅ Workspaces initialized."
 
 # 1. Launch Claude Agent
+AGENT_NAMES+=("claude")
 CLAUDE_AUTH_MOUNTS="-v claude-config:/home/appuser/.claude"
 CLAUDE_CMD="claude-flow swarm --config $SWARM_DIR_NAME/claude-flow.config.json \"$SWARM_OBJECTIVE\""
-CLAUDE_PID=$(launch_agent "claude" "$CLAUDE_RUN_DIR" "$CLAUDE_CMD" "$CLAUDE_AUTH_MOUNTS")
+launch_agent "claude" "$CLAUDE_RUN_DIR" "$CLAUDE_CMD" "$CLAUDE_AUTH_MOUNTS"
 
 # 2. Launch Codex Agent
+AGENT_NAMES+=("codex")
 CODEX_AUTH_MOUNTS="" # Uses OPENAI_API_KEY env var
 CODEX_CMD="codex --model gpt-4o-mini --full-auto \"$SWARM_OBJECTIVE\""
-CODEX_PID=$(launch_agent "codex" "$CODEX_RUN_DIR" "$CODEX_CMD" "$CODEX_AUTH_MOUNTS")
+launch_agent "codex" "$CODEX_RUN_DIR" "$CODEX_CMD" "$CODEX_AUTH_MOUNTS"
 
 # 3. Launch Gemini Agent
+AGENT_NAMES+=("gemini")
 GEMINI_AUTH_MOUNTS="-v $HOME/.config/gcloud:/home/appuser/.config/gcloud:ro"
 if [ -d "$HOME/.gemini" ]; then
     GEMINI_AUTH_MOUNTS="$GEMINI_AUTH_MOUNTS -v $HOME/.gemini:/home/appuser/.gemini:ro"
 fi
-# Placeholder command for what would be a more complex Gemini agent script
-GEMINI_CMD="echo 'Objective: $SWARM_OBJECTIVE' > output.md && echo 'Gemini agent completed.' >> output.md"
-GEMINI_PID=$(launch_agent "gemini" "$GEMINI_RUN_DIR" "$GEMINI_CMD" "$GEMINI_AUTH_MOUNTS")
+# Simulate a real task with sleep
+GEMINI_CMD="echo 'Objective: $SWARM_OBJECTIVE' > output.md && echo 'Gemini agent starting work...' && sleep 15 && echo 'Gemini agent completed.' >> output.md"
+launch_agent "gemini" "$GEMINI_RUN_DIR" "$GEMINI_CMD" "$GEMINI_AUTH_MOUNTS"
 
 print_status "Waiting for initial agents (Claude, Codex, Gemini) to complete..."
-wait $CLAUDE_PID $CODEX_PID $GEMINI_PID
+any_agent_failed=false
+for i in "${!AGENT_PIDS[@]}"; do
+    pid=${AGENT_PIDS[$i]}
+    name=${AGENT_NAMES[$i]}
+    wait $pid
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        print_error "Agent '$name' failed with exit code $exit_code." | tee -a "$LOG_FILE_PATH_HOST"
+        any_agent_failed=true
+    else
+        print_status "✅ Agent '$name' completed successfully." | tee -a "$LOG_FILE_PATH_HOST"
+    fi
+done
+
+if [ "$any_agent_failed" = true ]; then
+    print_error "One or more initial agents failed. Halting execution." | tee -a "$LOG_FILE_PATH_HOST"
+    exit 1
+fi
+
 print_status "All initial agents have finished. Starting integration phase..." | tee -a "$LOG_FILE_PATH_HOST"
 
 # 4. Launch Gemini Integration Agent
+AGENT_PIDS=() # Reset PIDs for the next stage
+AGENT_NAMES=("integration")
 INTEGRATION_PROMPT_FILE="integration_prompt.txt"
 cat << EOF > "$INTEGRATION_RUN_DIR/$INTEGRATION_PROMPT_FILE"
 You are an expert software engineering integrator. Your task is to analyze the outputs from three different AI agents (Claude, Codex, Gemini) and create a final, superior solution.
@@ -881,13 +903,31 @@ EOF
 
 INTEGRATION_AUTH_MOUNTS="$GEMINI_AUTH_MOUNTS"
 INTEGRATION_EXTRA_MOUNTS="-v $CLAUDE_RUN_DIR:/home/appuser/projects/claude_output:ro -v $CODEX_RUN_DIR:/home/appuser/projects/codex_output:ro -v $GEMINI_RUN_DIR:/home/appuser/projects/gemini_output:ro"
-# Placeholder command for what would be a more complex Gemini agent script
-INTEGRATION_CMD="echo 'Integration task started. See final_report.md for output.' > README.md; cat $INTEGRATION_PROMPT_FILE"
-INTEGRATION_PID=$(launch_agent "integration" "$INTEGRATION_RUN_DIR" "$INTEGRATION_CMD" "$INTEGRATION_AUTH_MOUNTS" "$INTEGRATION_EXTRA_MOUNTS")
+# Simulate a real task with sleep
+INTEGRATION_CMD="echo 'Integration task started. See final_report.md for output.' > README.md && sleep 10 && cat $INTEGRATION_PROMPT_FILE >> final_report.md"
+launch_agent "integration" "$INTEGRATION_RUN_DIR" "$INTEGRATION_CMD" "$INTEGRATION_AUTH_MOUNTS" "$INTEGRATION_EXTRA_MOUNTS"
 
 print_status "Waiting for integration agent to complete..."
-wait $INTEGRATION_PID
-print_status "Integration complete. Final report generated." | tee -a "$LOG_FILE_PATH_HOST"
+wait "${AGENT_PIDS[0]}"
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    print_error "Integration agent failed with exit code $exit_code." | tee -a "$LOG_FILE_PATH_HOST"
+    exit 1
+fi
+print_status "✅ Integration complete. Final report generated." | tee -a "$LOG_FILE_PATH_HOST"
+
+# --- Log Aggregation ---
+print_status "Aggregating all agent logs..."
+echo -e "\n\n--- AGENT LOGS ---\n" >> "$LOG_FILE_PATH_HOST"
+for dir in "$CLAUDE_RUN_DIR" "$CODEX_RUN_DIR" "$GEMINI_RUN_DIR" "$INTEGRATION_RUN_DIR"; do
+    agent_log=$(find "$dir" -name "*_agent.log" 2>/dev/null)
+    if [ -f "$agent_log" ]; then
+        echo "--- Log for $(basename "$dir") ---" >> "$LOG_FILE_PATH_HOST"
+        cat "$agent_log" >> "$LOG_FILE_PATH_HOST"
+        echo -e "\n--- End Log for $(basename "$dir") ---\n" >> "$LOG_FILE_PATH_HOST"
+    fi
+done
+print_status "✅ All logs aggregated into main orchestration log."
 
 # Final status message
 echo ""
