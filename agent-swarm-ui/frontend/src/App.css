@@ -40,3 +40,111 @@
 .read-the-docs {
   color: #888;
 }
+
+/* API Key Management Styles */
+.api-key-management {
+  margin-top: 40px;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+  text-align: left;
+}
+
+.api-key-management h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #555;
+}
+
+.form-group input[type="password"] {
+  width: calc(100% - 20px);
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+.api-key-management button {
+  background-color: #007bff;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.api-key-management button:hover {
+  background-color: #0056b3;
+}
+
+.message {
+  margin-top: 15px;
+  padding: 10px;
+  border-radius: 4px;
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  text-align: center;
+}
+
+.current-keys {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.current-keys h3 {
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.current-keys ul {
+  list-style: none;
+  padding: 0;
+}
+
+.current-keys li {
+  margin-bottom: 5px;
+  color: #666;
+}
+
+/* Terminal Styles */
+.terminal-container {
+  margin-top: 40px;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #222; /* Dark background for terminal */
+  text-align: left;
+}
+
+.terminal-container h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #eee; /* Light color for heading */
+}
+
+.xterm-terminal {
+  width: 100%;
+  height: 400px; /* Fixed height for the terminal */
+  background-color: #000; /* Black background for xterm */
+  color: #fff; /* White text for xterm */
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 14px;
+  line-height: 1.2;
+}

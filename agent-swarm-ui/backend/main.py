@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import json
 import os
@@ -6,6 +7,9 @@ import asyncio
 import subprocess
 
 app = FastAPI()
+
+# Mount the frontend's static files
+app.mount("/", StaticFiles(directory="/app/frontend/dist", html=True), name="static")
 
 API_KEYS_FILE = "api_keys.json"
 
