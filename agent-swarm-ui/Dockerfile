@@ -21,11 +21,18 @@ COPY ./frontend /app/frontend
 COPY ./backend/*.md /app/agents/
 
 # --- Agent CLI Installation ---
-# Placeholder commands for installing the agents.
-# We will replace these with the actual installation steps later.
+# Install Gemini CLI
 RUN npm install -g @google/gemini-cli
+
+# Install Claude tools
+RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g claude-flow
+
+# Install OpenAI/Codex tools
+RUN pip install openai
 RUN pip install codex-cli
+RUN npm install -g openai
+RUN pip install openai-cli
 
 # Install frontend dependencies
 RUN npm install --prefix /app/frontend

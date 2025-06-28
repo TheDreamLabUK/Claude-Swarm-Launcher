@@ -14,10 +14,10 @@ function App() {
   const [projectDirectory, setProjectDirectory] = useState('/workspace');
   const [isProjectRunning, setIsProjectRunning] = useState(false);
   const [agentModels, setAgentModels] = useState({
-    claude: 'claude-3-5-sonnet-20241022',
-    gemini: 'gemini-1.5-pro',
-    codex: 'gpt-4o',
-    orchestrator: 'claude-3-5-sonnet-20241022'
+    claude: 'claude-3-sonnet-20250514',
+    gemini: 'gemini-2.5-pro',
+    codex: 'gpt-4.1-mini',
+    orchestrator: 'claude-3-sonnet-20250514'
   });
   const terminalRef = useRef(null);
   const term = useRef(null);
@@ -143,18 +143,24 @@ function App() {
         // Start orchestrator agent first to coordinate
         ws.current.send(`echo "Starting Agent Swarm for: ${projectPrompt}"\r`);
 
-        // Start Claude Flow with specified model
-        ws.current.send(`export ANTHROPIC_MODEL=${agentModels.claude} && claude-flow "${projectPrompt}" > claude_output.txt 2>&1 &\r`);
+        // Start Claude Code with specified model
+        ws.current.send(`export ANTHROPIC_MODEL=${agentModels.claude} && claude-code "${projectPrompt}" > claude_output.txt 2>&1 &\r`);
+
+        // Also run claude-flow in parallel
+        ws.current.send(`export ANTHROPIC_MODEL=${agentModels.claude} && claude-flow "${projectPrompt}" > claude_flow_output.txt 2>&1 &\r`);
 
         // Start Gemini CLI with specified model
         ws.current.send(`export GEMINI_MODEL=${agentModels.gemini} && gemini "${projectPrompt}" > gemini_output.txt 2>&1 &\r`);
 
-        // Start Codex CLI with specified model
+        // Start OpenAI tools with specified model
         ws.current.send(`export OPENAI_MODEL=${agentModels.codex} && codex "${projectPrompt}" > codex_output.txt 2>&1 &\r`);
+
+        // Also run openai CLI
+        ws.current.send(`export OPENAI_MODEL=${agentModels.codex} && echo "${projectPrompt}" | openai api chat.completions.create -m ${agentModels.codex} > openai_output.txt 2>&1 &\r`);
 
         // Run orchestrator to integrate results
         ws.current.send(`echo "All agents started. Type 'jobs' to see running processes."\r`);
-        ws.current.send(`echo "Agent outputs will be saved to *_output.txt files."\r`);
+        ws.current.send(`echo "Agent outputs: claude_output.txt, claude_flow_output.txt, gemini_output.txt, codex_output.txt, openai_output.txt"\r`);
         ws.current.send(`echo "Use 'tail -f *_output.txt' to monitor progress."\r`);
       }, 500);
     } else {
@@ -255,9 +261,8 @@ function App() {
               onChange={(e) => setAgentModels({...agentModels, claude: e.target.value})}
               disabled={isProjectRunning}
             >
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-              <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
-              <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+              <option value="claude-3-sonnet-20250514">Sonnet 4</option>
+              <option value="claude-3-opus-20250514">Opus 4</option>
             </select>
           </div>
           <div className="form-group">
@@ -268,9 +273,8 @@ function App() {
               onChange={(e) => setAgentModels({...agentModels, gemini: e.target.value})}
               disabled={isProjectRunning}
             >
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
             </select>
           </div>
           <div className="form-group">
@@ -281,10 +285,7 @@ function App() {
               onChange={(e) => setAgentModels({...agentModels, codex: e.target.value})}
               disabled={isProjectRunning}
             >
-              <option value="gpt-4o">GPT-4o</option>
-              <option value="gpt-4o-mini">GPT-4o Mini</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              <option value="o1-preview">o1 Preview</option>
+              <option value="gpt-4.1-mini">ChatGPT 4.1 Mini</option>
             </select>
           </div>
           <div className="form-group">
@@ -295,9 +296,10 @@ function App() {
               onChange={(e) => setAgentModels({...agentModels, orchestrator: e.target.value})}
               disabled={isProjectRunning}
             >
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-              <option value="gpt-4o">GPT-4o</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="claude-3-sonnet-20250514">Sonnet 4</option>
+              <option value="claude-3-opus-20250514">Opus 4</option>
+              <option value="gpt-4.1-mini">ChatGPT 4.1 Mini</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
             </select>
           </div>
         </div>

@@ -6,11 +6,6 @@ import json
 import os
 import asyncio
 import subprocess
-import pty
-import select
-import termios
-import struct
-import fcntl
 
 app = FastAPI()
 
@@ -82,80 +77,58 @@ def get_api_keys():
 @app.websocket("/ws/shell")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-
-    # Load API keys and set them as environment variables
-    api_keys = load_api_keys()
-    env = os.environ.copy()
-    for key, value in api_keys.items():
-        env[key] = value
-
-    master_fd, slave_fd = pty.openpty()
-
+    process = None
     try:
-        # Start bash process with PTY
-        process = await asyncio.create_subprocess_exec(
-            "bash", "-i",  # Interactive bash
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            env=env,
-            preexec_fn=os.setsid
+        # Load API keys and set them as environment variables for the shell process
+        api_keys = load_api_keys()
+        env = os.environ.copy()
+        for key, value in api_keys.items():
+            env[key] = value
+
+        # Start a shell process
+        process = await asyncio.create_subprocess_shell(
+            "bash -i",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env
         )
 
-        # Close slave fd in parent process
-        os.close(slave_fd)
-
-        # Make master fd non-blocking
-        fcntl.fcntl(master_fd, fcntl.F_SETFL, os.O_NONBLOCK)
-
-        async def read_from_pty():
-            loop = asyncio.get_event_loop()
+        async def read_stdout():
             while True:
-                try:
-                    # Use select to check if data is available
-                    ready, _, _ = select.select([master_fd], [], [], 0.1)
-                    if ready:
-                        data = os.read(master_fd, 1024)
-                        if data:
-                            await websocket.send_text(data.decode('utf-8', errors='ignore'))
-                        else:
-                            break
-                    await asyncio.sleep(0.01)  # Small delay to prevent busy waiting
-                except OSError:
+                data = await process.stdout.read(1024)
+                if not data:
                     break
-                except Exception as e:
-                    print(f"Error reading from PTY: {e}")
+                await websocket.send_text(data.decode('utf-8', errors='ignore'))
+
+        async def read_stderr():
+            while True:
+                data = await process.stderr.read(1024)
+                if not data:
                     break
+                await websocket.send_text(data.decode('utf-8', errors='ignore'))
 
-        # Start reading task
-        read_task = asyncio.create_task(read_from_pty())
+        stdout_task = asyncio.create_task(read_stdout())
+        stderr_task = asyncio.create_task(read_stderr())
 
-        # Handle WebSocket messages
         while True:
-            try:
-                data = await websocket.receive_text()
-                # Write to PTY
-                os.write(master_fd, data.encode('utf-8'))
-            except WebSocketDisconnect:
-                print("Client disconnected")
-                break
-            except Exception as e:
-                print(f"Error in websocket: {e}")
-                break
+            data = await websocket.receive_text()
+            if process.stdin:
+                process.stdin.write(data.encode('utf-8'))
+                await process.stdin.drain()
 
+    except WebSocketDisconnect:
+        print("Client disconnected")
     except Exception as e:
-        print(f"Error setting up PTY: {e}")
+        print(f"Error in websocket: {e}")
     finally:
-        # Cleanup
-        try:
-            if 'read_task' in locals():
-                read_task.cancel()
-            if 'process' in locals():
-                process.terminate()
-                await process.wait()
-            os.close(master_fd)
-        except:
-            pass
+        if process and process.returncode is None:
+            process.terminate()
+            await process.wait()
+        if 'stdout_task' in locals() and not stdout_task.done():
+            stdout_task.cancel()
+        if 'stderr_task' in locals() and not stderr_task.done():
+            stderr_task.cancel()
 
 # Mount the frontend's static files at the end
 app.mount("/", StaticFiles(directory="/app/frontend/dist", html=True), name="static")
