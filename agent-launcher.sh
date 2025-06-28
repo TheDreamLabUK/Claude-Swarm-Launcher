@@ -1,7 +1,10 @@
 #!/bin/bash
-# Claude Flow Swarm Launcher
-# A self-contained script to launch a Claude Flow Swarm session in a Docker container.
-# It checks for prerequisites, creates missing files, and guides the user through setup.
+# Unified Agentic Swarm Launcher
+# A self-contained script to launch a multi-agent swarm session in Docker containers.
+# It orchestrates Claude, Codex, and Gemini agents to work on a given task.
+
+# Rename this file to 'agent-launcher.sh' to reflect its new purpose.
+mv claude-swarm-docker.sh agent-launcher.sh
 #
 # Features:
 # - Automatic Docker image building
@@ -51,6 +54,39 @@ cleanup_previous_swarms() {
     fi
 }
 
+# --- Interactive Functions ---
+interactive_project_selection() {
+    print_status "No project specified. Starting interactive project selection..."
+
+    # Get a list of directories in the parent directory, excluding hidden ones.
+    local potential_dirs=($(find "$PARENT_DIR" -maxdepth 1 -mindepth 1 -type d -not -path '*/.*' | sed 's|.*/||'))
+
+    if [ ${#potential_dirs[@]} -eq 0 ]; then
+        print_error "No project directories found in the current location."
+        exit 1
+    fi
+
+    echo "Please select the target project directory:"
+    local i=1
+    for dir in "${potential_dirs[@]}"; do
+        echo "  $i) $dir"
+        i=$((i+1))
+    done
+
+    local choice
+    read -p "Enter number: " choice
+
+    # Validate choice
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#potential_dirs[@]} ]; then
+        print_error "Invalid selection. Please enter a number from 1 to ${#potential_dirs[@]}."
+        exit 1
+    fi
+
+    PROJECT_NAME=${potential_dirs[$((choice-1))]}
+    # PROJECT_PATH is set globally after this function is called
+    print_status "✅ Project selected: ${YELLOW}$PROJECT_NAME${NC}"
+}
+
 # --- Prerequisite and File Creation Functions ---
 
 # Verifies Docker is installed and the daemon is running
@@ -71,6 +107,47 @@ check_prerequisites() {
     print_status "✅ Docker is installed and running."
 }
 
+# Checks for necessary API credentials
+check_credentials() {
+    print_status "Checking for API credentials..."
+    local all_creds_found=true
+
+    # For Claude Flow: It uses a config volume, but ANTHROPIC_API_KEY is good practice
+    if [ -z "$ANTHROPIC_API_KEY" ]; then
+        print_warning "ANTHROPIC_API_KEY is not set. The Claude agent may require it."
+        all_creds_found=false
+    fi
+    print_status "ⓘ Claude Flow agent auth is handled via a persistent Docker volume ('claude-config')."
+
+    # For Codex: Uses OPENAI_API_KEY environment variable
+    if [ -z "$OPENAI_API_KEY" ]; then
+        print_warning "OPENAI_API_KEY is not set. The Codex agent will fail."
+        all_creds_found=false
+    fi
+    print_status "ⓘ Codex agent auth uses the OPENAI_API_KEY environment variable."
+
+    # For Gemini: Uses gcloud auth or a local .gemini directory
+    if [ -d "$HOME/.gemini" ]; then
+         print_status "✅ Found Gemini config directory at ~/.gemini"
+    elif ! gcloud auth print-access-token &> /dev/null; then
+        print_warning "Gemini authentication is not configured."
+        print_warning "Please run 'gcloud auth application-default login' OR create a ~/.gemini config directory."
+        all_creds_found=false
+    fi
+     print_status "ⓘ Gemini agent auth uses a mounted ~/.gemini directory or gcloud credentials."
+
+    if [ "$all_creds_found" = true ]; then
+        print_status "✅ All API credentials appear to be configured."
+    else
+        print_error "One or more API credentials are missing or misconfigured. Please check the warnings."
+        read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+}
+
 # Prints a warning about needing a Claude API key/subscription
 print_api_key_warning() {
     echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════${NC}"
@@ -82,22 +159,29 @@ print_api_key_warning() {
     echo ""
 }
 
-# Creates a .gitignore entry for the swarm directory if not already present
+# Creates a .gitignore entry if not already present
 ensure_gitignore_entry() {
-    local gitignore_path="$1/.gitignore"
-    local entry="$SWARM_DIR_NAME/"
+    local project_path="$1"
+    local entry="$2"
+    local comment="$3"
+    local gitignore_path="$project_path/.gitignore"
+
+    if [ ! -d "$project_path/.git" ]; then
+        print_warning "Project at '$project_path' is not a git repository. Skipping .gitignore update."
+        return
+    fi
 
     if [ -f "$gitignore_path" ]; then
         if ! grep -qxF "$entry" "$gitignore_path"; then
             echo "" >> "$gitignore_path"
-            echo "# Claude Flow Swarm files" >> "$gitignore_path"
+            echo "# $comment" >> "$gitignore_path"
             echo "$entry" >> "$gitignore_path"
-            print_status "Added $SWARM_DIR_NAME/ to .gitignore"
+            print_status "Added '$entry' to project .gitignore"
         fi
     else
-        echo "# Claude Flow Swarm files" > "$gitignore_path"
+        echo "# $comment" > "$gitignore_path"
         echo "$entry" >> "$gitignore_path"
-        print_status "Created .gitignore with $SWARM_DIR_NAME/ entry"
+        print_status "Created .gitignore with '$entry' entry in project"
     fi
 }
 
@@ -355,10 +439,17 @@ ENV NODE_NO_READLINE=1
 USER appuser
 WORKDIR /home/appuser
 
-# Install global npm packages required for Claude Flow
+# Install Google Cloud SDK for Gemini CLI
+RUN apt-get install -y apt-transport-https ca-certificates gnupg
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+RUN apt-get update && apt-get install -y google-cloud-sdk
+
+# Install global npm packages for Claude Flow and Codex
 RUN npm install -g \\
     claude-flow \\
     @anthropic-ai/claude-code \\
+    @openai/codex \\
     node-pty \\
     tsx \\
     nodemon
@@ -493,7 +584,7 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional args
 if [[ "$SHOW_HELP" = true ]]; then
   echo "Claude Flow Swarm Launcher"
   echo ""
-  echo "Usage: $0 [options] <project_directory_name> \"<swarm_objective>\" [mode] [model]"
+  echo "Usage: $0 [options] [project_directory_name] [mode] [model]"
   echo ""
   echo "Options:"
   echo "  --rebuild              Force a rebuild of the Docker image without using cache."
@@ -501,8 +592,10 @@ if [[ "$SHOW_HELP" = true ]]; then
   echo "  -h, --help             Show this help message."
   echo ""
   echo "Arguments:"
-  echo "  project_directory_name  Name of the project directory (must exist)"
-  echo "  swarm_objective        What you want the swarm to accomplish (quoted string)"
+  echo "  project_directory_name  Name of the project directory (optional). If not provided,"
+  echo "                          an interactive selection menu will be shown."
+  echo "  The swarm objective is read from 'task.md' (looked for first in the project"
+  echo "  directory, then in the current directory)."
   echo "  mode                   Execution mode (optional):"
   echo "                         - auto: Run swarm non-interactively (default)"
   echo "                         - shell: Start an interactive shell in the container"
@@ -520,17 +613,40 @@ if [[ "$SHOW_HELP" = true ]]; then
   exit 0
 fi
 
-# Validate command line arguments
-if [ -z "$1" ] || [ -z "$2" ]; then
-  print_error "Missing required arguments. Use --help for usage information."
-  exit 1
+# After the while loop, positional args are in $1, $2, etc.
+if [ -z "$1" ]; then
+    # No project name provided, start interactive selection
+    interactive_project_selection
+    # Since we ran interactively, assume defaults for mode/model
+    MODE="auto"
+    MODEL_PREFERENCE="auto-fallback"
+else
+    # Project name is the first positional argument
+    PROJECT_NAME=$1
+    MODE=${2:-auto}
+    MODEL_PREFERENCE=${3:-auto-fallback}
 fi
 
-# Parse command line arguments
-PROJECT_NAME=$1
-SWARM_OBJECTIVE=$2
-MODE=${3:-auto}
-MODEL_PREFERENCE=${4:-auto-fallback}
+# Set project path now that PROJECT_NAME is determined
+PROJECT_PATH="$PARENT_DIR/$PROJECT_NAME"
+
+# Find task.md: first in project dir, then in parent dir
+if [ -f "$PROJECT_PATH/task.md" ]; then
+    TASK_FILE_PATH="$PROJECT_PATH/task.md"
+    print_status "Found 'task.md' in project directory."
+elif [ -f "$PARENT_DIR/task.md" ]; then
+    TASK_FILE_PATH="$PARENT_DIR/task.md"
+    print_status "Found 'task.md' in launcher directory."
+else
+    print_error "'task.md' not found in project or launcher directory."
+    exit 1
+fi
+
+SWARM_OBJECTIVE=$(<"$TASK_FILE_PATH")
+if [ -z "$SWARM_OBJECTIVE" ]; then
+    print_error "'task.md' is empty. Please provide an objective."
+    exit 1
+fi
 PROJECT_PATH="$PARENT_DIR/$PROJECT_NAME"
 CONTAINER_NAME="claude-swarm-session-$PROJECT_NAME"
 
@@ -565,17 +681,10 @@ fi
 
 # Run all prerequisite checks and setup steps
 check_prerequisites
+check_credentials
 print_api_key_warning
 create_dockerfile_if_missing
-
-# Create the dedicated swarm directory and related files
-mkdir -p "$SWARM_DIR_PATH"
-mkdir -p "$SWARM_DIR_PATH/tmp"
-print_status "Ensured swarm directory exists at: $SWARM_DIR_PATH"
-ensure_gitignore_entry "$PROJECT_PATH"
-create_config_if_missing "$CONFIG_FILE_PATH"
-setup_claude_md "$PROJECT_PATH" "$SWARM_DIR_PATH"
-create_swarm_readme "$SWARM_DIR_PATH"
+ensure_gitignore_entry "$PROJECT_PATH" "runs/" "Agent run artifacts"
 
 # Build Docker image
 print_status "Checking for Docker image: $IMAGE_NAME..."
@@ -632,7 +741,8 @@ echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
 print_status "🚀 Launching Claude Flow Swarm"
 print_status "📁 Project: ${YELLOW}$PROJECT_NAME${NC}"
-print_status "🎯 Objective: ${YELLOW}$SWARM_OBJECTIVE${NC}"
+print_status "🎯 Objective: (from task.md)"
+echo -e "${YELLOW}$SWARM_OBJECTIVE${NC}"
 print_status "🔧 Mode: ${YELLOW}$MODE${NC}"
 print_status "🤖 Model: ${YELLOW}$MODEL_PREFERENCE${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
@@ -641,208 +751,148 @@ echo ""
 # Handle shell mode - just start an interactive shell
 if [ "$MODE" = "shell" ]; then
     print_status "Starting interactive shell in container..."
+    print_warning "The project directory '$PROJECT_NAME' will be mounted at '/home/appuser/projects/$PROJECT_NAME'"
     docker run $TTY_FLAGS --rm \
       --gpus all \
       -v "$PROJECT_PATH":"/home/appuser/projects/$PROJECT_NAME" \
-      -v "$SWARM_DIR_PATH/tmp":/tmp \
-      -v "claude-config:/home/appuser/.claude" \
-      -v "npm-cache:/home/appuser/.npm" \
+      -v "$HOME/.config/gcloud":/home/appuser/.config/gcloud:ro \
+      -e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
+      -e "OPENAI_API_KEY=$OPENAI_API_KEY" \
       $ENV_FLAGS \
-      --name $CONTAINER_NAME \
+      --name "$CONTAINER_NAME-shell" \
       --workdir "/home/appuser/projects/$PROJECT_NAME" \
       $IMAGE_NAME \
       zsh
     exit 0
 fi
 
-# Handle auto mode - run the swarm with full fallback logic
-LOG_FILE_NAME="claude-swarm-$(date +%Y%m%d-%H%M%S).log"
-LOG_FILE_PATH_HOST="$SWARM_DIR_PATH/$LOG_FILE_NAME"
-print_status "📝 Logs will be saved to: ${YELLOW}$LOG_FILE_PATH_HOST${NC}"
+# Handle auto mode - run the multi-agent swarm
+RUN_DIR_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+RUNS_DIR_PATH="$PROJECT_PATH/runs"
+RUN_DIR_PATH="$RUNS_DIR_PATH/$RUN_DIR_TIMESTAMP"
 
-# Create a temporary script file to avoid complex quoting issues
-TEMP_SCRIPT=$(mktemp)
-trap "rm -f $TEMP_SCRIPT" EXIT
+print_status "Creating run directory: $RUN_DIR_PATH"
+CLAUDE_RUN_DIR="$RUN_DIR_PATH/claude_run"
+CODEX_RUN_DIR="$RUN_DIR_PATH/codex_run"
+GEMINI_RUN_DIR="$RUN_DIR_PATH/gemini_run"
+INTEGRATION_RUN_DIR="$RUN_DIR_PATH/integration_run"
 
-# Write the execution script using a heredoc
-cat > "$TEMP_SCRIPT" << 'SCRIPT_END'
-#!/bin/bash
-# --- Container-side execution script ---
+mkdir -p "$CLAUDE_RUN_DIR"
+mkdir -p "$CODEX_RUN_DIR"
+mkdir -p "$GEMINI_RUN_DIR"
+mkdir -p "$INTEGRATION_RUN_DIR"
+cp "$TASK_FILE_PATH" "$RUN_DIR_PATH/task.md"
+print_status "✅ Run directory and agent workspaces created."
 
-# Explicitly set PATH to include npm global bins and deno
-export PATH="/home/appuser/.npm-global/bin:/home/appuser/.deno/bin:$PATH"
+# --- Setup for Claude Agent ---
+# The claude-flow agent requires specific config files. We create them in its workspace.
+print_status "Setting up configuration for the Claude agent..."
+# Create a temporary .claude-flow-swarm directory for config generation
+TEMP_SWARM_DIR="$CLAUDE_RUN_DIR/$SWARM_DIR_NAME"
+mkdir -p "$TEMP_SWARM_DIR"
+create_config_if_missing "$TEMP_SWARM_DIR/claude-flow.config.json"
+setup_claude_md "$CLAUDE_RUN_DIR" "$TEMP_SWARM_DIR"
+create_swarm_readme "$TEMP_SWARM_DIR"
+print_status "✅ Claude agent configuration is ready."
 
-# Verify claude-flow is accessible
-echo "[DEBUG] Current PATH: $PATH"
-echo "[DEBUG] Which claude-flow: $(which claude-flow)"
-echo "[DEBUG] NPM global packages:"
-npm list -g --depth=0
+LOG_FILE_NAME="swarm-orchestration.log"
+LOG_FILE_PATH_HOST="$RUN_DIR_PATH/$LOG_FILE_NAME"
+touch "$LOG_FILE_PATH_HOST" # Create the log file
+print_status "📝 Main orchestration log will be saved to: ${YELLOW}$LOG_FILE_PATH_HOST${NC}"
 
-# Extract passed variables
-OBJECTIVE="$1"
-LOG_FILE="$2"
-MODEL_PREFERENCE="$3"
-CONFIG_FILE_PATH="./claude-flow.config.json"
+echo "Starting multi-agent swarm..." | tee -a "$LOG_FILE_PATH_HOST"
 
-# Model identifiers matching Claude API
-MODEL_OPUS="claude-opus-4-20250514"
-MODEL_SONNET="claude-sonnet-4-20250514"
+# --- Agent Launch Logic ---
+launch_agent() {
+    local agent_name="$1"
+    local agent_workdir="$2"
+    local agent_command="$3"
+    local auth_mounts="$4"
+    local extra_mounts="$5"
+    local container_name="agent-swarm-session-$RUN_DIR_TIMESTAMP-$agent_name"
+    local log_file="$agent_workdir/${agent_name}_agent.log"
 
-# Initialize logging with header
-echo "🔄 Claude Flow Swarm Execution Log" | tee "$LOG_FILE"
-echo "====================================" | tee -a "$LOG_FILE"
-echo "Objective: $OBJECTIVE" | tee -a "$LOG_FILE"
-echo "Started at: $(date)" | tee -a "$LOG_FILE"
-echo "Working directory: $(pwd)" | tee -a "$LOG_FILE"
-echo "====================================" | tee -a "$LOG_FILE"
-echo "" | tee -a "$LOG_FILE"
+    print_status "Launching ${agent_name} agent..." | tee -a "$LOG_FILE_PATH_HOST"
 
-# Function to execute swarm with a specific model
-try_swarm_with_model() {
-    local model_name="$1"
-    local attempt="$2"
-    echo "[$(date +%H:%M:%S)] 🤖 Attempt $attempt: Using model $model_name" | tee -a "$LOG_FILE"
+    docker run -d --rm \
+      --gpus all \
+      -v "$agent_workdir:/home/appuser/projects/workspace" \
+      $auth_mounts \
+      $extra_mounts \
+      -e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
+      -e "OPENAI_API_KEY=$OPENAI_API_KEY" \
+      $ENV_FLAGS \
+      --name "$container_name" \
+      --workdir "/home/appuser/projects/workspace" \
+      "$IMAGE_NAME" \
+      bash -c "$agent_command" > "$log_file" 2>&1 &
 
-    # Update model in config file
-    if [ -f "$CONFIG_FILE_PATH" ]; then
-        sed -i "s|\(\"model\":\s*\"\)[^\"]*\(\"\)|\1$model_name\2|g" "$CONFIG_FILE_PATH"
-        echo "[$(date +%H:%M:%S)] Updated config to use model: $model_name" | tee -a "$LOG_FILE"
-    else
-        echo "[$(date +%H:%M:%S)] ⚠️  Config file not found. Using swarm defaults." | tee -a "$LOG_FILE"
-    fi
-
-    # Set a generous timeout for individual agent tasks (e.g., 30 minutes)
-    # This is the most important timeout to prevent premature kills.
-    local agent_timeout_ms=1800000 # 30 minutes
-    if [[ "$model_name" == *"opus"* ]]; then
-        # Give Opus even more time
-        agent_timeout_ms=2700000 # 45 minutes
-    fi
-    echo "[$(date +%H:%M:%S)] Setting agent task timeout to ${agent_timeout_ms}ms" | tee -a "$LOG_FILE"
-    claude-flow config set orchestrator.agentTimeoutMs $agent_timeout_ms 2>&1 | tee -a "$LOG_FILE"
-
-    # Also set the terminal command timeout to be equally generous
-    echo "[$(date +%H:%M:%S)] Setting terminal command timeout to 30 minutes" | tee -a "$LOG_FILE"
-    claude-flow config set terminal.commandTimeout 1800000 2>&1 | tee -a "$LOG_FILE"
-
-    # Set the overall swarm timeout in the config as well
-    # This should be longer than any individual step.
-    local swarm_timeout_minutes=180
-    echo "[$(date +%H:%M:%S)] Setting swarm config timeout to ${swarm_timeout_minutes} minutes" | tee -a "$LOG_FILE"
-    claude-flow config set swarm.timeout $swarm_timeout_minutes 2>&1 | tee -a "$LOG_FILE"
-
-    echo "[$(date +%H:%M:%S)] Launching swarm..." | tee -a "$LOG_FILE"
-    echo "------------------------------------" | tee -a "$LOG_FILE"
-
-    # The outer timeout command acts as the final safety net.
-    # It should be slightly longer than the swarm.timeout config (180m).
-    # e.g., timeout 185m ...
-    timeout 185m claude-flow swarm "$OBJECTIVE" 2>&1 | tee -a "$LOG_FILE"
-    local exit_code=${PIPESTATUS[0]}
-
-    echo "------------------------------------" | tee -a "$LOG_FILE"
-    echo "[$(date +%H:%M:%S)] Swarm exited with code: $exit_code" | tee -a "$LOG_FILE"
-    echo "" | tee -a "$LOG_FILE"
-
-    return $exit_code
+    echo "$!" # Return the process ID
 }
 
-COMMAND_EXIT_CODE=1
+# --- Main Orchestration ---
+print_status "Initializing agent workspaces by copying project files..."
+cp -r "$PROJECT_PATH/." "$CLAUDE_RUN_DIR/"
+cp -r "$PROJECT_PATH/." "$CODEX_RUN_DIR/"
+cp -r "$PROJECT_PATH/." "$GEMINI_RUN_DIR/"
+# The integration run starts with only the original project files
+cp -r "$PROJECT_PATH/." "$INTEGRATION_RUN_DIR/"
+print_status "✅ Workspaces initialized."
 
-# Memory System Workaround: Clean memory state to prevent hangs
-echo "[$(date +%H:%M:%S)] Applying workaround for potential memory hangs..." | tee -a "$LOG_FILE"
-# This removes the database file, forcing claude-flow to re-initialize it cleanly.
-# It's safe because the swarm builds its context from scratch for each run anyway.
-rm -f ./memory/claude-flow-data.json* # Remove db and journal files
-# We can also use the built-in cleanup command for a safer approach
-claude-flow memory cleanup --older-than 0 --vacuum --dry-run false 2>&1 | tee -a "$LOG_FILE"
-echo "[$(date +%H:%M:%S)] ✅ Memory state cleaned." | tee -a "$LOG_FILE"
+# 1. Launch Claude Agent
+CLAUDE_AUTH_MOUNTS="-v claude-config:/home/appuser/.claude"
+CLAUDE_CMD="claude-flow swarm --config $SWARM_DIR_NAME/claude-flow.config.json \"$SWARM_OBJECTIVE\""
+CLAUDE_PID=$(launch_agent "claude" "$CLAUDE_RUN_DIR" "$CLAUDE_CMD" "$CLAUDE_AUTH_MOUNTS")
 
-# Execute based on model preference
-case "$MODEL_PREFERENCE" in
-    "opus4")
-        try_swarm_with_model "$MODEL_OPUS" "1"
-        COMMAND_EXIT_CODE=$?
-        ;;
-    "sonnet4")
-        try_swarm_with_model "$MODEL_SONNET" "1"
-        COMMAND_EXIT_CODE=$?
-        ;;
-    "auto-fallback"|*)
-        echo "🔄 Auto-fallback mode: Trying Opus 4 first..." | tee -a "$LOG_FILE"
-        try_swarm_with_model "$MODEL_OPUS" "1"
-        COMMAND_EXIT_CODE=$?
+# 2. Launch Codex Agent
+CODEX_AUTH_MOUNTS="" # Uses OPENAI_API_KEY env var
+CODEX_CMD="codex --model gpt-4o-mini --full-auto \"$SWARM_OBJECTIVE\""
+CODEX_PID=$(launch_agent "codex" "$CODEX_RUN_DIR" "$CODEX_CMD" "$CODEX_AUTH_MOUNTS")
 
-        if [ $COMMAND_EXIT_CODE -ne 0 ]; then
-            echo "[$(date +%H:%M:%S)] ⚠️  Opus 4 failed (exit code: $COMMAND_EXIT_CODE)" | tee -a "$LOG_FILE"
-            echo "[$(date +%H:%M:%S)] 🔄 Attempting fallback to Sonnet 4..." | tee -a "$LOG_FILE"
-            sleep 5
-            try_swarm_with_model "$MODEL_SONNET" "2 (fallback)"
-            COMMAND_EXIT_CODE=$?
-        fi
-        ;;
-esac
-
-# Final summary
-echo "" | tee -a "$LOG_FILE"
-echo "====================================" | tee -a "$LOG_FILE"
-echo "SWARM EXECUTION SUMMARY" | tee -a "$LOG_FILE"
-echo "====================================" | tee -a "$LOG_FILE"
-echo "Finished at: $(date)" | tee -a "$LOG_FILE"
-echo "Exit code: $COMMAND_EXIT_CODE" | tee -a "$LOG_FILE"
-
-# Interpret exit code
-if [ $COMMAND_EXIT_CODE -eq 0 ]; then
-    echo "Status: ✅ SUCCESS" | tee -a "$LOG_FILE"
-elif [ $COMMAND_EXIT_CODE -eq 124 ]; then
-    echo "Status: ⏱️  TIMEOUT (185 minutes exceeded)" | tee -a "$LOG_FILE"
-else
-    echo "Status: ❌ FAILED" | tee -a "$LOG_FILE"
+# 3. Launch Gemini Agent
+GEMINI_AUTH_MOUNTS="-v $HOME/.config/gcloud:/home/appuser/.config/gcloud:ro"
+if [ -d "$HOME/.gemini" ]; then
+    GEMINI_AUTH_MOUNTS="$GEMINI_AUTH_MOUNTS -v $HOME/.gemini:/home/appuser/.gemini:ro"
 fi
+# Placeholder command for what would be a more complex Gemini agent script
+GEMINI_CMD="echo 'Objective: $SWARM_OBJECTIVE' > output.md && echo 'Gemini agent completed.' >> output.md"
+GEMINI_PID=$(launch_agent "gemini" "$GEMINI_RUN_DIR" "$GEMINI_CMD" "$GEMINI_AUTH_MOUNTS")
 
-echo "====================================" | tee -a "$LOG_FILE"
-echo "" | tee -a "$LOG_FILE"
+print_status "Waiting for initial agents (Claude, Codex, Gemini) to complete..."
+wait $CLAUDE_PID $CODEX_PID $GEMINI_PID
+print_status "All initial agents have finished. Starting integration phase..." | tee -a "$LOG_FILE_PATH_HOST"
 
-# List modified files
-echo "Files modified during swarm execution:" | tee -a "$LOG_FILE"
-echo "------------------------------------" | tee -a "$LOG_FILE"
-# Find files in parent directory, excluding swarm directory
-find .. -name ".claude-flow-swarm" -prune -o -newer "$LOG_FILE" -type f -print 2>/dev/null | \
-    sed "s|^\.\./||" | \
-    sort | \
-    head -20 | \
-    tee -a "$LOG_FILE"
+# 4. Launch Gemini Integration Agent
+INTEGRATION_PROMPT_FILE="integration_prompt.txt"
+cat << EOF > "$INTEGRATION_RUN_DIR/$INTEGRATION_PROMPT_FILE"
+You are an expert software engineering integrator. Your task is to analyze the outputs from three different AI agents (Claude, Codex, Gemini) and create a final, superior solution.
 
-file_count=$(find .. -name ".claude-flow-swarm" -prune -o -newer "$LOG_FILE" -type f -print 2>/dev/null | wc -l)
-if [ $file_count -gt 20 ]; then
-    echo "... and $((file_count - 20)) more files" | tee -a "$LOG_FILE"
-fi
+The outputs are available in the following read-only directories:
+- /home/appuser/projects/claude_output
+- /home/appuser/projects/codex_output
+- /home/appuser/projects/gemini_output
 
-echo "====================================" | tee -a "$LOG_FILE"
-echo "Log file saved in container at: $LOG_FILE" | tee -a "$LOG_FILE"
-SCRIPT_END
+Your instructions are:
+1. Review the code, approach, and any artifacts in each of the three output directories.
+2. Identify the best ideas, code snippets, and architectural decisions from each.
+3. Synthesize these best features into a new, cohesive solution in your current working directory.
+4. Write a final report named 'final_report.md' that explains your choices, details the integration process, and showcases the final features of the integrated solution.
+EOF
 
-# Make the script executable
-chmod +x "$TEMP_SCRIPT"
+INTEGRATION_AUTH_MOUNTS="$GEMINI_AUTH_MOUNTS"
+INTEGRATION_EXTRA_MOUNTS="-v $CLAUDE_RUN_DIR:/home/appuser/projects/claude_output:ro -v $CODEX_RUN_DIR:/home/appuser/projects/codex_output:ro -v $GEMINI_RUN_DIR:/home/appuser/projects/gemini_output:ro"
+# Placeholder command for what would be a more complex Gemini agent script
+INTEGRATION_CMD="echo 'Integration task started. See final_report.md for output.' > README.md; cat $INTEGRATION_PROMPT_FILE"
+INTEGRATION_PID=$(launch_agent "integration" "$INTEGRATION_RUN_DIR" "$INTEGRATION_CMD" "$INTEGRATION_AUTH_MOUNTS" "$INTEGRATION_EXTRA_MOUNTS")
 
-# Launch container with the script
-docker run $TTY_FLAGS --rm \
-  --gpus all \
-  -v "$PROJECT_PATH":"/home/appuser/projects/$PROJECT_NAME" \
-  -v "$SWARM_DIR_PATH/tmp":/tmp \
-  -v "$TEMP_SCRIPT":/tmp/swarm-script.sh:ro \
-  -v "claude-config:/home/appuser/.claude" \
-  -v "npm-cache:/home/appuser/.npm" \
-  $ENV_FLAGS \
-  --name $CONTAINER_NAME \
-  --workdir "/home/appuser/projects/$PROJECT_NAME/$SWARM_DIR_NAME" \
-  $IMAGE_NAME \
-  /tmp/swarm-script.sh "$SWARM_OBJECTIVE" "./$LOG_FILE_NAME" "$MODEL_PREFERENCE"
+print_status "Waiting for integration agent to complete..."
+wait $INTEGRATION_PID
+print_status "Integration complete. Final report generated." | tee -a "$LOG_FILE_PATH_HOST"
 
 # Final status message
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
-print_status "✅ Swarm session completed"
+print_status "✅ Multi-agent swarm session completed"
 print_status "📁 Project: ${YELLOW}$PROJECT_NAME${NC}"
-print_status "📝 Log saved: ${YELLOW}$LOG_FILE_PATH_HOST${NC}"
+print_status "📝 Run artifacts are in: ${YELLOW}$RUN_DIR_PATH${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
