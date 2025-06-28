@@ -10,6 +10,15 @@ function App() {
   const [codexApiKey, setCodexApiKey] = useState('');
   const [message, setMessage] = useState('');
   const [currentKeys, setCurrentKeys] = useState({});
+  const [projectPrompt, setProjectPrompt] = useState('');
+  const [projectDirectory, setProjectDirectory] = useState('/workspace');
+  const [isProjectRunning, setIsProjectRunning] = useState(false);
+  const [agentModels, setAgentModels] = useState({
+    claude: 'claude-3-5-sonnet-20241022',
+    gemini: 'gemini-1.5-pro',
+    codex: 'gpt-4o',
+    orchestrator: 'claude-3-5-sonnet-20241022'
+  });
   const terminalRef = useRef(null);
   const term = useRef(null);
   const fitAddon = useRef(null);
@@ -43,7 +52,7 @@ function App() {
       };
 
       ws.current.onerror = (error) => {
-        term.current.write(`\r\nWebSocket error: ${error.message}\r\n`);
+        term.current.write(`\r\nWebSocket error occurred\r\n`);
         console.error('WebSocket error:', error);
       };
 
@@ -117,6 +126,49 @@ function App() {
     }
   };
 
+  const handleStartProject = () => {
+    if (!projectPrompt.trim()) {
+      setMessage('Please enter a project prompt');
+      return;
+    }
+
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      setIsProjectRunning(true);
+
+      // Change to project directory
+      ws.current.send(`cd ${projectDirectory}\r`);
+
+      // Start all agents concurrently in the background
+      setTimeout(() => {
+        // Start orchestrator agent first to coordinate
+        ws.current.send(`echo "Starting Agent Swarm for: ${projectPrompt}"\r`);
+
+        // Start Claude Flow with specified model
+        ws.current.send(`export ANTHROPIC_MODEL=${agentModels.claude} && claude-flow "${projectPrompt}" > claude_output.txt 2>&1 &\r`);
+
+        // Start Gemini CLI with specified model
+        ws.current.send(`export GEMINI_MODEL=${agentModels.gemini} && gemini "${projectPrompt}" > gemini_output.txt 2>&1 &\r`);
+
+        // Start Codex CLI with specified model
+        ws.current.send(`export OPENAI_MODEL=${agentModels.codex} && codex "${projectPrompt}" > codex_output.txt 2>&1 &\r`);
+
+        // Run orchestrator to integrate results
+        ws.current.send(`echo "All agents started. Type 'jobs' to see running processes."\r`);
+        ws.current.send(`echo "Agent outputs will be saved to *_output.txt files."\r`);
+        ws.current.send(`echo "Use 'tail -f *_output.txt' to monitor progress."\r`);
+      }, 500);
+    } else {
+      setMessage('Terminal not connected. Please wait for connection.');
+    }
+  };
+
+  const handleStopProject = () => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send('\x03'); // Send Ctrl+C
+      setIsProjectRunning(false);
+    }
+  };
+
   return (
     <div className="App">
       <h1>Agent Swarm UI</h1>
@@ -166,6 +218,106 @@ function App() {
             <li>Gemini API Key: {currentKeys.GEMINI_API_KEY ? 'Set' : 'Not Set'}</li>
             <li>Codex API Key: {currentKeys.CODEX_API_KEY ? 'Set' : 'Not Set'}</li>
           </ul>
+        </div>
+      </div>
+
+      <div className="project-setup">
+        <h2>Project Setup</h2>
+        <div className="form-group">
+          <label htmlFor="projectPrompt">Project Prompt:</label>
+          <textarea
+            id="projectPrompt"
+            value={projectPrompt}
+            onChange={(e) => setProjectPrompt(e.target.value)}
+            placeholder="Describe what you want to build..."
+            rows="4"
+            disabled={isProjectRunning}
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="projectDirectory">Project Directory:</label>
+          <input
+            type="text"
+            id="projectDirectory"
+            value={projectDirectory}
+            onChange={(e) => setProjectDirectory(e.target.value)}
+            placeholder="/workspace"
+            disabled={isProjectRunning}
+          />
+        </div>
+        <div className="model-configuration">
+          <h3>Agent Model Configuration</h3>
+          <div className="form-group">
+            <label htmlFor="claudeModel">Claude Model:</label>
+            <select
+              id="claudeModel"
+              value={agentModels.claude}
+              onChange={(e) => setAgentModels({...agentModels, claude: e.target.value})}
+              disabled={isProjectRunning}
+            >
+              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+              <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+              <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="geminiModel">Gemini Model:</label>
+            <select
+              id="geminiModel"
+              value={agentModels.gemini}
+              onChange={(e) => setAgentModels({...agentModels, gemini: e.target.value})}
+              disabled={isProjectRunning}
+            >
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="codexModel">Codex/OpenAI Model:</label>
+            <select
+              id="codexModel"
+              value={agentModels.codex}
+              onChange={(e) => setAgentModels({...agentModels, codex: e.target.value})}
+              disabled={isProjectRunning}
+            >
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gpt-4o-mini">GPT-4o Mini</option>
+              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+              <option value="o1-preview">o1 Preview</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="orchestratorModel">Orchestrator Model:</label>
+            <select
+              id="orchestratorModel"
+              value={agentModels.orchestrator}
+              onChange={(e) => setAgentModels({...agentModels, orchestrator: e.target.value})}
+              disabled={isProjectRunning}
+            >
+              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            </select>
+          </div>
+        </div>
+        <div className="project-controls">
+          {!isProjectRunning ? (
+            <button
+              onClick={handleStartProject}
+              className="start-btn"
+              disabled={!projectPrompt.trim()}
+            >
+              Start Project
+            </button>
+          ) : (
+            <button
+              onClick={handleStopProject}
+              className="stop-btn"
+            >
+              Stop Project
+            </button>
+          )}
         </div>
       </div>
 

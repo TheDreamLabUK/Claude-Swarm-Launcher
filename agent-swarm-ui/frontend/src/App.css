@@ -68,12 +68,21 @@
   color: #555;
 }
 
-.form-group input[type="password"] {
+.form-group input[type="password"],
+.form-group input[type="text"],
+.form-group textarea,
+.form-group select {
   width: calc(100% - 20px);
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 16px;
+  font-family: inherit;
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 100px;
 }
 
 .api-key-management button {
@@ -147,4 +156,78 @@
   font-family: 'Cascadia Code', 'Fira Code', monospace;
   font-size: 14px;
   line-height: 1.2;
+}
+
+/* Project Setup Styles */
+.project-setup {
+  margin-top: 40px;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #f0f8ff;
+  text-align: left;
+}
+
+.project-setup h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.project-controls {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.start-btn {
+  background-color: #28a745;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  min-width: 150px;
+}
+
+.start-btn:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.start-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.stop-btn {
+  background-color: #dc3545;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  min-width: 150px;
+}
+
+.stop-btn:hover {
+  background-color: #c82333;
+}
+
+/* Model Configuration Styles */
+.model-configuration {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background-color: #f8f9fa;
+}
+
+.model-configuration h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #495057;
+  font-size: 18px;
 }
