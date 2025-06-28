@@ -463,6 +463,7 @@ EOF
 # Argument parsing
 REBUILD_IMAGE=false
 SHOW_HELP=false
+FORCE_OPUS=false
 POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -474,6 +475,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --rebuild)
       REBUILD_IMAGE=true
+      shift # past argument
+      ;;
+    --force-opus)
+      FORCE_OPUS=true
       shift # past argument
       ;;
     *)    # unknown option
@@ -492,6 +497,7 @@ if [[ "$SHOW_HELP" = true ]]; then
   echo ""
   echo "Options:"
   echo "  --rebuild              Force a rebuild of the Docker image without using cache."
+  echo "  --force-opus           Force the use of the Claude 4 Opus model."
   echo "  -h, --help             Show this help message."
   echo ""
   echo "Arguments:"
@@ -524,9 +530,15 @@ fi
 PROJECT_NAME=$1
 SWARM_OBJECTIVE=$2
 MODE=${3:-auto}
-MODEL_PREFERENCE=${4:-sonnet4}
+MODEL_PREFERENCE=${4:-auto-fallback}
 PROJECT_PATH="$PARENT_DIR/$PROJECT_NAME"
 CONTAINER_NAME="claude-swarm-session-$PROJECT_NAME"
+
+# Handle force-opus flag
+if [[ "$FORCE_OPUS" = true ]]; then
+    MODEL_PREFERENCE="opus4"
+    print_status "Opus model forced via command-line switch."
+fi
 
 # Define the dedicated directory for swarm files
 SWARM_DIR_PATH="$PROJECT_PATH/$SWARM_DIR_NAME"
