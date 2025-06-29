@@ -9,6 +9,10 @@ import shutil
 from datetime import datetime
 import git
 from typing import Dict
+from .agents.claude_agent import ClaudeAgent
+from .agents.gemini_agent import GeminiAgent
+from .agents.codex_agent import CodexAgent
+from .agents.integration_agent import IntegrationAgent
 
 app = FastAPI()
 
@@ -105,34 +109,6 @@ def create_claude_flow_config(path: str, model: str):
     with open(os.path.join(path, "claude-flow.config.json"), "w") as f:
         json.dump(config, f, indent=2)
 
-async def stream_command(command: str, cwd: str, env: dict, websocket: WebSocket, agent_name: str):
-    """Runs a command and streams its stdout/stderr to the WebSocket."""
-    await websocket.send_json({"agent": agent_name, "type": "status", "message": f"Executing: {command}"})
-
-    process = await asyncio.create_subprocess_shell(
-        command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
-        env=env
-    )
-
-    async def stream_output(stream, output_type):
-        while True:
-            line = await stream.readline()
-            if not line:
-                break
-            message = line.decode('utf-8', errors='ignore').strip()
-            if message:
-                await websocket.send_json({"agent": agent_name, "type": output_type, "message": message})
-
-    await asyncio.gather(
-        stream_output(process.stdout, "stdout"),
-        stream_output(process.stderr, "stderr")
-    )
-
-    return await process.wait()
-
 # --- API Routes ---
 
 @app.post("/api/keys")
@@ -162,83 +138,107 @@ async def project_websocket(websocket: WebSocket, project_id: str):
         data = await websocket.receive_json()
         github_url = data.get("github_url")
         project_prompt = data.get("project_prompt")
-        agent_models = data.get("agent_models")
+        agent_models = data.get("agent_models") or {
+            "claude": os.getenv("CLAUDE_MODEL", "claude-sonnet-4"),
+            "gemini": os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
+            "codex": os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            "integrator": os.getenv("INTEGRATION_MODEL", "gemini-2.5-pro")
+        }
 
         workspace_dir = f"/home/appuser/app/workspace/{project_id}"
         os.makedirs(workspace_dir, exist_ok=True)
 
-        await websocket.send_json({"type": "status", "message": f"Cloning {github_url}..."})
-        repo_name = github_url.split('/')[-1].replace('.git', '')
-        repo_path = os.path.join(workspace_dir, repo_name)
-        repo = git.Repo.clone_from(github_url, repo_path)
-
-        # --- Agent Sandbox Setup ---
+        repo_path = os.path.join(workspace_dir, "repository")
         sandboxes = {}
-        for agent in ["claude", "gemini", "codex"]:
-            sandbox_path = os.path.join(workspace_dir, f"{agent}_sandbox")
-            shutil.copytree(repo_path, sandbox_path)
-            sandboxes[agent] = sandbox_path
 
-            # Create swarm config for claude-flow
-            swarm_dir = os.path.join(sandbox_path, ".claude-flow-swarm")
-            os.makedirs(swarm_dir, exist_ok=True)
-            create_claude_md(swarm_dir)
-            create_claude_flow_config(swarm_dir, agent_models.get("claude"))
-            await websocket.send_json({"type": "status", "message": f"Created {agent} sandbox."})
+        try:
+            await websocket.send_json({"type": "status", "message": f"Cloning {github_url}..."})
+            repo = git.Repo.clone_from(github_url, repo_path)
 
-        # --- Agent Execution ---
-        api_keys = load_api_keys()
-        base_env = os.environ.copy()
-        base_env.update(api_keys)
+            # --- Agent Sandbox Setup ---
+            agent_configs = {
+                "claude": ClaudeAgent,
+                "gemini": GeminiAgent,
+                "codex": CodexAgent,
+            }
 
-        async def run_agent(name, model_key, command_template, sandbox_path):
-            env = base_env.copy()
-            model = agent_models.get(model_key)
-            if "claude" in name.lower(): env["ANTHROPIC_MODEL"] = model
-            elif "gemini" in name.lower(): env["GEMINI_MODEL"] = model
-            elif "codex" in name.lower(): env["OPENAI_MODEL"] = model
+            for name, _ in agent_configs.items():
+                sandbox_path = os.path.join(workspace_dir, f"{name}_sandbox")
+                shutil.copytree(repo_path, sandbox_path)
+                git.Repo.init(sandbox_path)
+                sandboxes[name] = sandbox_path
 
-            command = command_template.format(prompt=project_prompt)
-            return await stream_command(command, sandbox_path, env, websocket, name)
+                if name == "claude":
+                    swarm_dir = os.path.join(sandbox_path, ".claude-flow-swarm")
+                    os.makedirs(swarm_dir, exist_ok=True)
+                    create_claude_md(swarm_dir)
+                    create_claude_flow_config(swarm_dir, agent_models.get("claude"))
 
-        await websocket.send_json({"type": "status", "message": "Starting agents..."})
+                await websocket.send_json({"type": "status", "message": f"Created {name} sandbox."})
 
-        await asyncio.gather(
-            run_agent("Claude", "claude", 'claude-flow swarm "{prompt}"', sandboxes["claude"]),
-            run_agent("Gemini", "gemini", 'gemini "{prompt}"', sandboxes["gemini"]),
-            run_agent("Codex", "codex", 'codex "{prompt}"', sandboxes["codex"])
-        )
+            # --- Agent Execution ---
+            api_keys = load_api_keys()
+            base_env = os.environ.copy()
+            base_env.update(api_keys)
 
-        # --- Integration Step ---
-        await websocket.send_json({"type": "status", "message": "All agents finished. Starting integration..."})
+            tasks = []
+            for name, agent_class in agent_configs.items():
+                agent = agent_class(
+                    model=agent_models.get(name),
+                    websocket=websocket,
+                    sandbox_path=sandboxes[name],
+                    env=base_env
+                )
+                tasks.append(agent.run(project_prompt))
 
-        integration_prompt = f"""
-        Integrate the best ideas from three AI-generated solutions for the prompt: '{project_prompt}'.
-        - Claude's solution: {sandboxes['claude']}
-        - Gemini's solution: {sandboxes['gemini']}
-        - Codex's solution: {sandboxes['codex']}
-        Analyze all three, synthesize the best elements, and write the final, superior code to: {repo_path}
-        """
-        await run_agent("Integrator", "orchestrator", f'gemini "{integration_prompt}"', workspace_dir)
+            await websocket.send_json({"type": "status", "message": "Starting agents..."})
+            await asyncio.gather(*tasks)
 
-        # --- Git Workflow ---
-        await websocket.send_json({"type": "status", "message": "Integration complete. Committing changes..."})
-        integration_branch = f"ai-swarm-integration-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        repo.git.checkout('-b', integration_branch)
-        repo.git.add(A=True)
-        repo.git.commit('-m', f"AI Swarm Integration: {project_prompt}")
+            # --- Integration Step ---
+            await websocket.send_json({"type": "status", "message": "All agents finished. Starting integration..."})
 
-        await websocket.send_json({"type": "status", "message": f"Pushing branch '{integration_branch}' to origin..."})
-        repo.remote('origin').push(integration_branch)
+            integration_prompt = f"""
+            Integrate the best ideas from three AI-generated solutions for the prompt: '{project_prompt}'.
+            - Claude's solution is in the git history of: {sandboxes['claude']}
+            - Gemini's solution is in the git history of: {sandboxes['gemini']}
+            - Codex's solution is in the git history of: {sandboxes['codex']}
+            Analyze all three, synthesize the best elements, and write the final, superior code to the original repo at: {repo_path}
+            """
 
-        await websocket.send_json({
-            "type": "complete",
-            "message": f"Successfully pushed branch '{integration_branch}'. Please create a PR on GitHub."
-        })
+            integrator = IntegrationAgent(
+                model=agent_models.get("integrator"),
+                websocket=websocket,
+                sandbox_path=workspace_dir, # Integrator works in the main workspace
+                env=base_env,
+                sandboxes=sandboxes
+            )
+            await integrator.run(integration_prompt)
+
+            # --- Git Workflow ---
+            await websocket.send_json({"type": "status", "message": "Integration complete. Committing changes..."})
+            integration_branch = f"ai-swarm-integration-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            repo.git.checkout('-b', integration_branch)
+            repo.git.add(A=True)
+            repo.git.commit('-m', f"AI Swarm Integration: {project_prompt}")
+
+            await websocket.send_json({"type": "status", "message": f"Pushing branch '{integration_branch}' to origin..."})
+            repo.remote('origin').push(integration_branch)
+
+            await websocket.send_json({
+                "type": "complete",
+                "message": f"Successfully pushed branch '{integration_branch}'. Please create a PR on GitHub."
+            })
+
+        except Exception as e:
+            await websocket.send_json({"type": "error", "message": f"Error during project execution: {str(e)}"})
 
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"An unexpected error occurred: {str(e)}"})
     finally:
+        # --- Workspace Cleanup ---
+        if 'workspace_dir' in locals() and os.path.exists(workspace_dir):
+            shutil.rmtree(workspace_dir)
+            await websocket.send_json({"type": "status", "message": "Workspace cleaned up."})
         await websocket.close()
 
 # --- Static Files Mount ---

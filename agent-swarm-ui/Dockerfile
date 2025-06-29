@@ -1,5 +1,5 @@
-# Use the official NVIDIA CUDA base image for GPU support
-FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+# Use the official Python base image
+FROM python:3.11-slim
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
@@ -33,13 +33,11 @@ ENV NODE_NO_READLINE=1
 USER appuser
 WORKDIR /home/appuser
 
-# Install global npm packages required for Claude Flow
+# Install global npm packages required for AI agents
 RUN npm install -g \
     claude-flow \
-    @anthropic-ai/claude-code \
     @google/gemini-cli \
-    codex-cli \
-    openai \
+    openai@^4.1.0 \
     node-pty \
     tsx \
     nodemon

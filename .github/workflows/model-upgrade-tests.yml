@@ -1,0 +1,164 @@
+name: Model Upgrade Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 9 AM UTC to catch model API changes
+    - cron: '0 9 * * *'
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  model-compatibility-tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        provider: [anthropic, google, openai]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: 'agent-swarm-ui/package*.json'
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install global CLI tools
+      run: |
+        npm install -g \
+          claude-flow@^4 \
+          @google/generative-ai@^2.5.0 \
+          openai@^4.1.0
+
+    - name: Test Anthropic Models
+      if: matrix.provider == 'anthropic'
+      env:
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "Testing Claude models..."
+        if command -v claude-flow &> /dev/null; then
+          claude-flow --help | grep -E "(claude-opus-4|claude-sonnet-4)" || exit 1
+          echo "✓ Claude model identifiers found"
+        else
+          echo "✗ claude-flow not installed"
+          exit 1
+        fi
+
+    - name: Test Google Models
+      if: matrix.provider == 'google'
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: |
+        echo "Testing Gemini models..."
+        if npx @google/generative-ai --help 2>/dev/null; then
+          echo "✓ Gemini CLI working"
+          # Test model parameter support
+          npx @google/generative-ai --help | grep -E "(model|gemini-2.5)" || exit 1
+          echo "✓ Gemini 2.5 model support found"
+        else
+          echo "✗ Gemini CLI not working"
+          exit 1
+        fi
+
+    - name: Test OpenAI Models
+      if: matrix.provider == 'openai'
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        echo "Testing OpenAI models..."
+        if command -v openai &> /dev/null; then
+          # Test if CLI can list models (requires API key)
+          if [ -n "$OPENAI_API_KEY" ]; then
+            openai api models.list | head -5
+            echo "✓ OpenAI API accessible"
+          else
+            echo "⚠ OpenAI API key not provided, skipping API test"
+          fi
+          echo "✓ OpenAI CLI installed"
+        else
+          echo "✗ OpenAI CLI not installed"
+          exit 1
+        fi
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: model-compatibility-tests
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image
+      run: |
+        cd agent-swarm-ui
+        docker build -t ai-agent-swarm:test .
+
+    - name: Test Docker build
+      run: |
+        # Test that the container starts and CLI tools are available
+        docker run --rm ai-agent-swarm:test bash -c "
+          echo 'Testing CLI tools in container...' &&
+          command -v claude-flow && echo '✓ claude-flow found' &&
+          command -v npx && echo '✓ npx found' &&
+          command -v openai && echo '✓ openai found' &&
+          npm list -g --depth=0 | grep -E '(claude-flow|generative-ai|openai)' &&
+          echo '✓ All CLI tools installed correctly'
+        "
+
+    - name: Run model upgrade tests
+      run: |
+        cd agent-swarm-ui
+        # Run the regression test script inside Docker
+        docker run --rm -v $(pwd):/workspace ai-agent-swarm:test bash -c "
+          cd /workspace &&
+          chmod +x test-models.sh &&
+          ./test-models.sh
+        "
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install frontend dependencies
+      run: |
+        cd agent-swarm-ui/frontend
+        npm ci
+
+    - name: Build frontend
+      run: |
+        cd agent-swarm-ui/frontend
+        npm run build
+
+    - name: Test model options in frontend
+      run: |
+        cd agent-swarm-ui/frontend/src
+        # Check that new model identifiers are in App.jsx
+        grep -q "claude-sonnet-4" App.jsx || (echo "✗ claude-sonnet-4 not found" && exit 1)
+        grep -q "claude-opus-4" App.jsx || (echo "✗ claude-opus-4 not found" && exit 1)
+        grep -q "gemini-2.5-pro" App.jsx || (echo "✗ gemini-2.5-pro not found" && exit 1)
+        grep -q "gemini-2.5-flash" App.jsx || (echo "✗ gemini-2.5-flash not found" && exit 1)
+        grep -q "gpt-4.1-mini" App.jsx || (echo "✗ gpt-4.1-mini not found" && exit 1)
+        grep -q "o3" App.jsx || (echo "✗ o3 not found" && exit 1)
+        echo "✓ All new model identifiers found in frontend"

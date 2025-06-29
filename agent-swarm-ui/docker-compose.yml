@@ -1,0 +1,15 @@
+services:
+  ai-swarm:
+    build: .
+    ports:
+      - "8100:8100"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./workspace:/home/appuser/app/workspace
+      - agent-cache:/home/appuser/.cache
+    env_file:
+      - .env
+
+volumes:
+  agent-cache:
