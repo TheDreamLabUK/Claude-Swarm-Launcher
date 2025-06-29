@@ -1,1 +1,2 @@
-agent-swarm-ui/.env
+.env
+node_modules

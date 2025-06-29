@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   Activity,
   Brain,
@@ -178,7 +178,7 @@ const ModelInfo = ({ modelConfig }) => {
   );
 };
 
-const AgentMonitorPanel = ({ agentName, agentState, modelConfig, onAgentControl }) => {
+const AgentMonitorPanel = ({ agentName, agentState, modelConfig }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(new Set());
   const [showLogs, setShowLogs] = useState(true);
@@ -240,11 +240,7 @@ const AgentMonitorPanel = ({ agentName, agentState, modelConfig, onAgentControl 
     });
   };
 
-  const handleAgentAction = (action) => {
-    if (onAgentControl) {
-      onAgentControl(agentName, action);
-    }
-  };
+  
 
   return (
     <motion.div

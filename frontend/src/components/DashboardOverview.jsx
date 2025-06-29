@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+
 import {
   Activity,
   Clock,
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-const MetricCard = ({ title, value, icon: Icon, color, trend, subtitle }) => (
+const MetricCard = ({ title, value, color, trend, subtitle }) => (
   <motion.div
     whileHover={{ scale: 1.02, y: -2 }}
     className={clsx('metric-card', color)}
@@ -296,7 +296,7 @@ const DashboardOverview = ({
           <h3>Recent Activity</h3>
           <div className="activity-list">
             {Object.entries(agentStates)
-              .filter(([_, state]) => state.logs.length > 0)
+              .filter(([, state]) => state.logs.length > 0)
               .map(([agentName, state]) => {
                 const recentLog = state.logs[state.logs.length - 1];
                 return (

@@ -1,338 +1,511 @@
-# Claude Flow Swarm Launcher 🚀
+# Claude Swarm Launcher 🚀
 
-**HINT** I am about 4 hours into this, I have much to learn, this is likely a very naive use of flow. It'll get better. 
+<div align="center">
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.0.0-informational)
-![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)
-![Claude Compatible](https://img.shields.io/badge/Claude%20Flow-Compatible-success)
+![GitHub Stars](https://img.shields.io/github/stars/yourusername/Claude-Swarm-Launcher?style=for-the-badge)
+![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
+![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![React](https://img.shields.io/badge/react-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 
-> **Transform complex objectives into coordinated AI agent swarms with a single command.**
+**A sophisticated multi-agent orchestration platform that coordinates Claude, Gemini, and OpenAI agents to collaboratively solve complex software engineering tasks through parallel execution and intelligent solution synthesis.**
 
-A self-contained, zero-configuration script that launches a powerful, containerised AI agent swarm on your local machine. Watch as a team of specialised AI agents work in parallel to achieve your development goals. This is JUST a container launcher for [Reuven Cohen's orchestrator](https://www.linkedin.com/feed/update/urn:li:activity:7338263351153610753/) which itself leverages [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/cli-reference), and took me no more than an hour to make, the credit is all theirs. 
+[Live Demo](https://yourdemo.com) • [Documentation](https://docs.yourdomain.com) • [Report Bug](https://github.com/yourusername/Claude-Swarm-Launcher/issues) • [Request Feature](https://github.com/yourusername/Claude-Swarm-Launcher/issues)
 
-[Here's the Claude Code Flow repo](https://github.com/ruvnet/claude-code-flow)
+</div>
 
 ---
 
-<p align="center">
-  <img src="https://github.com/user/repo/assets/demo.gif" alt="Claude Flow Swarm in action" width="800">
-  <br>
-  <em>Watch the swarm analyse, plan, code, and review in real-time</em>
-</p>
+## 🌟 Key Features
 
-## 🎯 What is This?
+<table>
+<tr>
+<td>
 
-The Claude Flow Swarm Launcher is your command-line interface to the future of AI-assisted development. It's the ignition key for the **[claude-flow](https://github.com/ruvnet/claude-code-flow)** engine, designed to work seamlessly within **Claude Code** or any local development environment.
+### 🤖 Multi-Agent Orchestration
+- Parallel execution of Claude, Gemini, and OpenAI agents
+- Intelligent task distribution and workload balancing
+- Real-time agent collaboration and communication
 
-### 🤖 What Can It Do?
+</td>
+<td>
 
-Give it a project and an objective, and watch as it:
-- **📋 Plans** - Creates a detailed execution strategy
-- **🔍 Researches** - Analyses your codebase and gathers context
-- **⚡ Executes** - Multiple agents work in parallel on different aspects
-- **✅ Reviews** - Self-reviews code quality and consistency
-- **📚 Documents** - Keeps documentation synchronised with changes
+### 🔄 Smart Integration
+- Automatic solution synthesis from multiple agents
+- Conflict resolution and consensus building
+- Best-practice extraction from diverse approaches
 
-## ✨ Key Features
+</td>
+</tr>
+<tr>
+<td>
 
-### 🚀 **Zero-Configuration Setup**
-Automatically generates everything you need - Dockerfile, configuration files, and directory structure. Just run and go.
+### 📊 Real-Time Monitoring
+- WebSocket-based live agent status updates
+- Performance metrics and cost tracking
+- Interactive timeline visualization
 
-### 📦 **Fully Containerised**
-Runs in an isolated Docker environment with GPU support. Your system stays clean, and the swarm gets all the resources it needs.
+</td>
+<td>
 
-### 🧠 **Intelligent Model Selection**
+### 🛡️ Robust Architecture
+- Git-based workspace isolation
+- Automatic error recovery and retry logic
+- Docker containerization for easy deployment
+
+</td>
+</tr>
+</table>
+
+## 🏗️ System Architecture
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        UI[React UI]
+        WS[WebSocket Client]
+    end
+    
+    subgraph "API Layer"
+        WSAPI[WebSocket API]
+        REST[REST API]
+        AUTH[Authentication]
+    end
+    
+    subgraph "Orchestration Layer"
+        OM[Orchestration Manager]
+        TQ[Task Queue]
+        IM[Integration Manager]
+    end
+    
+    subgraph "Agent Layer"
+        CA[Claude Agent]
+        GA[Gemini Agent]
+        OA[OpenAI Agent]
+    end
+    
+    subgraph "Infrastructure"
+        GIT[Git Workspaces]
+        CACHE[Redis Cache]
+        METRICS[Metrics Store]
+    end
+    
+    UI <--> WS
+    WS <--> WSAPI
+    UI <--> REST
+    REST --> AUTH
+    WSAPI --> OM
+    REST --> OM
+    OM --> TQ
+    TQ --> CA
+    TQ --> GA
+    TQ --> OA
+    CA --> GIT
+    GA --> GIT
+    OA --> GIT
+    CA --> IM
+    GA --> IM
+    OA --> IM
+    IM --> WSAPI
+    OM --> CACHE
+    OM --> METRICS
+    
+    style UI fill:#61DAFB,stroke:#333,stroke-width:2px
+    style CA fill:#7C3AED,stroke:#333,stroke-width:2px
+    style GA fill:#4285F4,stroke:#333,stroke-width:2px
+    style OA fill:#10B981,stroke:#333,stroke-width:2px
 ```
-Opus (Powerful) ──┐
-                  ├── Auto-fallback System
-Sonnet (Fast) ────┘
-```
-Automatically attempts the powerful Claude 3 Opus model, gracefully falling back to the efficient Claude 3.5 Sonnet if needed.
 
-### 📁 **Clean Project Organisation**
-```
-your-project/
-├── src/
-├── tests/
-├── README.md
-└── .claude-flow-swarm/      # All swarm files here
-    ├── claude-flow.config.json
-    ├── README.md
-    └── claude-swarm-*.log
-```
-
-### 🔄 **Smart Session Management**
-Already running a swarm? The launcher detects it and reattaches automatically. No duplicate processes, no confusion.
-
-### 📝 **Comprehensive Logging**
-Every swarm run is fully logged with timestamps, making debugging and progress tracking straightforward.
-
-## 🏁 Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-1. **🐳 Docker** - [Install Docker](https://docs.docker.com/get-docker/)
-   ```bash
-   docker --version  # Verify installation
-   ```
+<details>
+<summary>System Requirements</summary>
 
-2. **🔑 Claude API Access**
-   - Requires a Claude API key (Pro/Team subscription)
-   - You'll configure this securely in the container environment
+- **Docker**: 20.10+ with Docker Compose
+- **Node.js**: 20+ LTS (for local development)
+- **Python**: 3.11+ (for local development)
+- **Git**: 2.30+
+- **Memory**: 8GB RAM minimum
+- **Storage**: 10GB available space
 
-### Installation
+</details>
 
-1. **Download the launcher script**
-   ```bash
-   wget https://raw.githubusercontent.com/your-repo/launch-claude-env.sh
-   # or
-   curl -O https://raw.githubusercontent.com/your-repo/launch-claude-env.sh
-   ```
+### 🐳 Docker Installation (Recommended)
 
-2. **Make it executable**
-   ```bash
-   chmod +x launch-claude-env.sh
-   ```
-
-3. **Launch your first swarm!**
-   ```bash
-   ./launch-claude-env.sh my-project "Refactor the authentication system for better security"
-   ```
-
-## 📖 Usage Guide
-
-### Basic Syntax
 ```bash
-./launch-claude-env.sh <project_name> "<objective>" [mode] [model]
+# Clone the repository
+git clone https://github.com/yourusername/Claude-Swarm-Launcher.git
+cd Claude-Swarm-Launcher
+
+# Configure environment
+cp .env.example .env
+nano .env  # Add your API keys
+
+# Launch with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
 ```
 
-### Parameters
+The application will be available at `http://localhost:8100`
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `project_name` | Required | Name of your project directory | - |
-| `objective` | Required | What you want the swarm to achieve (quoted) | - |
-| `mode` | Optional | `auto` or `shell` | `auto` |
-| `model` | Optional | `opus`, `sonnet`, or `auto-fallback` | `auto-fallback` |
+### 💻 Local Development Setup
 
-### Execution Modes
+<details>
+<summary>Backend Setup</summary>
 
-#### 🤖 **Auto Mode** (default)
-Runs the swarm non-interactively. Perfect for CI/CD pipelines or when you know exactly what you want.
 ```bash
-./launch-claude-env.sh my-app "Add comprehensive test coverage"
+# Navigate to backend
+cd backend
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run development server
+uvicorn main:app --reload --port 8000
 ```
 
-#### 🖥️ **Shell Mode**
-Drops you into an interactive shell inside the container for manual control and exploration.
+</details>
+
+<details>
+<summary>Frontend Setup</summary>
+
 ```bash
-./launch-claude-env.sh my-app "Debug environment" shell
+# Navigate to frontend
+cd frontend
+
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
 ```
 
-### Model Selection
+</details>
 
-#### 🧠 **Auto-Fallback** (default)
-Intelligently tries Opus first for complex tasks, automatically falling back to Sonnet if needed.
+<details>
+<summary>AI CLI Tools Installation</summary>
 
-#### ⚡ **Opus**
-Forces use of Claude 3 Opus - best for complex reasoning and large-scale refactoring.
 ```bash
-./launch-claude-env.sh my-app "Redesign the entire architecture" auto opus
+# Install required CLI tools globally
+npm install -g @anthropic/claude-cli @google/gemini-cli openai-cli
+
+# Verify installations
+claude --version
+gemini --version
+openai --version
 ```
 
-#### 🏃 **Sonnet**
-Forces use of Claude 3.5 Sonnet - faster and more efficient for straightforward tasks.
-```bash
-./launch-claude-env.sh my-app "Update dependencies" auto sonnet
-```
-
-## 🎨 Real-World Examples
-
-### 🔧 Complete Refactoring
-```bash
-./launch-claude-env.sh legacy-api \
-  "Analyse this Express.js API and refactor it to use modern TypeScript, \
-   add proper error handling, implement dependency injection, \
-   and ensure 100% type safety"
-```
-
-### 📚 Documentation Generation
-```bash
-./launch-claude-env.sh my-library \
-  "Generate comprehensive documentation including API reference, \
-   tutorials, and examples. Create a documentation site structure \
-   using MkDocs"
-```
-
-### 🧪 Test Suite Creation
-```bash
-./launch-claude-env.sh backend-service \
-  "Create a complete test suite with unit tests, integration tests, \
-   and E2E tests. Aim for 90% code coverage. Use Jest and Supertest"
-```
-
-### 🔒 Security Audit
-```bash
-./launch-claude-env.sh web-app \
-  "Perform a security audit, identify vulnerabilities, \
-   implement fixes, and add security best practices"
-```
-
-### 🎯 Feature Implementation
-```bash
-./launch-claude-env.sh saas-platform \
-  "Research WebSocket best practices, then implement a real-time \
-   notification system with Redis pub/sub for scalability"
-```
-
-## 🏗️ Architecture
-
-```mermaid
-graph TD
-    A[launch-claude-env.sh] -->|Checks| B[Prerequisites]
-    B --> C[Docker Setup]
-    C --> D[Project Structure]
-    D --> E[Container Launch]
-    E --> F[Claude Flow Engine]
-    F --> G[Agent Swarm]
-    G --> H[Parallel Execution]
-    H --> I[Results & Logs]
-    
-    style A fill:#f9f,stroke:#333,stroke-width:4px
-    style G fill:#bbf,stroke:#333,stroke-width:2px
-```
+</details>
 
 ## 🔧 Configuration
 
-### Default Configuration
-The script creates a sensible default `claude-flow.config.json` in your project's `.claude-flow-swarm/` directory:
+### Environment Variables
 
-```json
-{
-  "orchestrator": {
-    "maxConcurrentAgents": 10,
-    "agentTimeoutMs": 900000,
-    "resourceAllocationStrategy": "balanced"
-  },
-  "swarm": {
-    "strategy": "development",
-    "maxAgents": 5,
-    "parallel": true
-  }
+Create a `.env` file with the following variables:
+
+```env
+# API Keys (Required)
+ANTHROPIC_API_KEY=your_claude_api_key
+GEMINI_API_KEY=your_gemini_api_key
+OPENAI_API_KEY=your_openai_api_key
+
+# Model Configuration (Optional)
+CLAUDE_MODEL=claude-3-5-sonnet-20241022
+GEMINI_MODEL=gemini-2.5-pro
+OPENAI_MODEL=gpt-4o-mini
+
+# Server Configuration
+PORT=8100
+HOST=0.0.0.0
+DEBUG=false
+
+# Performance Tuning
+MAX_CONCURRENT_AGENTS=3
+AGENT_TIMEOUT=300
+RETRY_ATTEMPTS=3
+```
+
+### Advanced Configuration
+
+<details>
+<summary>Model Selection Matrix</summary>
+
+| Use Case | Claude Model | Gemini Model | OpenAI Model |
+|----------|-------------|--------------|--------------|
+| Code Generation | claude-3-5-sonnet | gemini-2.5-pro | gpt-4o |
+| Quick Tasks | claude-3-haiku | gemini-2.5-flash | gpt-4o-mini |
+| Complex Analysis | claude-3-opus | gemini-2.5-pro | gpt-4 |
+
+</details>
+
+## 📡 API Reference
+
+### WebSocket API
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant WebSocket
+    participant Orchestrator
+    participant Agents
+    participant Integration
+    
+    Client->>WebSocket: Connect
+    WebSocket-->>Client: Connection Established
+    
+    Client->>WebSocket: Send Task Request
+    WebSocket->>Orchestrator: Process Request
+    
+    Orchestrator->>Agents: Distribute Tasks
+    Agents-->>WebSocket: Status Updates
+    WebSocket-->>Client: agent_status
+    
+    Agents->>Integration: Submit Solutions
+    Integration->>Integration: Synthesize Results
+    Integration-->>WebSocket: Final Solution
+    WebSocket-->>Client: integration_complete
+```
+
+#### Request Format
+
+```typescript
+interface TaskRequest {
+  prompt: string;
+  config?: {
+    models?: {
+      claude?: string;
+      gemini?: string;
+      openai?: string;
+    };
+    timeout?: number;
+    retries?: number;
+  };
+  context?: {
+    files?: string[];
+    previousTaskId?: string;
+  };
 }
 ```
 
-### Customisation Options
+#### Response Types
 
-| Setting | Description | Values |
-|---------|-------------|--------|
-| `maxConcurrentAgents` | Maximum parallel agents | 1-20 |
-| `agentTimeoutMs` | Timeout per agent task | milliseconds |
-| `strategy` | Swarm behaviour preset | `development`, `research`, `review` |
-| `temperature` | AI creativity level | 0.0-1.0 |
-
-## 🛡️ Security Considerations
-
-### API Key Management
-- **Never** hardcode API keys in the script
-- Use environment variables or Docker secrets
-- The script will remind you about API key requirements but won't handle them
-
-### Recommended Approach
-```bash
-# Create a .env file (don't commit this!)
-echo "ANTHROPIC_API_KEY=your-key-here" > .env
-
-# Modify docker run command to include:
---env-file .env
+```typescript
+type WebSocketMessage = 
+  | { type: 'agent_status'; agent: string; status: string; progress: number }
+  | { type: 'agent_output'; agent: string; output: string; timestamp: string }
+  | { type: 'integration_complete'; solution: string; metrics: object }
+  | { type: 'error'; message: string; code: string };
 ```
 
-## 🐛 Troubleshooting
+### REST Endpoints
 
-### Common Issues
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Health check |
+| `/docs` | GET | Swagger documentation |
+| `/api/tasks` | GET | List all tasks |
+| `/api/tasks/{id}` | GET | Get task details |
+| `/api/agents/status` | GET | Agent status overview |
+| `/api/metrics` | GET | Performance metrics |
+
+## 🧪 Testing
+
+```bash
+# Run unit tests
+python -m pytest tests/unit -v
+
+# Run integration tests
+python -m pytest tests/integration -v
+
+# Run end-to-end tests
+python test_agents.py
+
+# Generate coverage report
+python -m pytest --cov=backend --cov-report=html
+```
+
+## 📊 Performance Metrics
+
+```mermaid
+graph LR
+    subgraph "Performance Indicators"
+        A[Task Completion Time]
+        B[Agent Response Time]
+        C[Solution Quality Score]
+        D[Resource Usage]
+        E[Cost per Task]
+    end
+    
+    A --> F[Dashboard]
+    B --> F
+    C --> F
+    D --> F
+    E --> F
+    
+    F --> G[Optimization Engine]
+    G --> H[Auto-scaling]
+    G --> I[Model Selection]
+    G --> J[Load Balancing]
+```
+
+## 🛠️ Development
+
+### Project Structure
+
+```
+Claude-Swarm-Launcher/
+├── backend/
+│   ├── agents/              # Agent implementations
+│   │   ├── base_agent.py    # Abstract base class
+│   │   ├── claude_agent.py  # Claude integration
+│   │   ├── gemini_agent.py  # Gemini integration
+│   │   └── codex_agent.py   # OpenAI integration
+│   ├── api/                 # API endpoints
+│   ├── core/                # Core orchestration logic
+│   ├── utils/               # Utility functions
+│   └── main.py              # FastAPI application
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # React components
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── services/        # API services
+│   │   └── App.jsx          # Main application
+│   └── public/              # Static assets
+├── tests/                   # Test suites
+├── docker/                  # Docker configurations
+└── docs/                    # Documentation
+```
+
+### Adding New Agents
+
+1. Create a new agent class:
+
+```python
+from backend.agents.base_agent import BaseAgent
+
+class YourAgent(BaseAgent):
+    def __init__(self, api_key: str, model: str):
+        super().__init__("your-agent", api_key, model)
+    
+    async def execute(self, prompt: str) -> dict:
+        # Implement agent logic
+        pass
+```
+
+2. Register in orchestrator:
+
+```python
+# In backend/main.py
+from backend.agents.your_agent import YourAgent
+
+agents.append(YourAgent(api_key, model))
+```
+
+### UI Component Architecture
+
+```mermaid
+graph TD
+    A[App.jsx] --> B[DashboardOverview]
+    A --> C[AgentMonitorPanel]
+    A --> D[ProjectTimeline]
+    
+    B --> E[PerformanceMetrics]
+    B --> F[CostTracker]
+    
+    C --> G[AgentStatus]
+    C --> H[AgentOutput]
+    
+    D --> I[TaskHistory]
+    D --> J[CodeDiffViewer]
+    D --> K[FileModificationSummary]
+    
+    A --> L[ModelSelector]
+    L --> M[ModelConfig]
+```
+
+## 🚨 Troubleshooting
 
 <details>
-<summary><strong>Docker daemon not running</strong></summary>
+<summary>Common Issues and Solutions</summary>
 
+### API Key Errors
 ```bash
-# Linux
-sudo systemctl start docker
+# Verify API keys are set
+cat .env | grep API_KEY
 
-# macOS/Windows
-# Start Docker Desktop application
+# Test individual agents
+python -c "from backend.agents.claude_agent import ClaudeAgent; agent = ClaudeAgent('key', 'model'); print(agent.test_connection())"
 ```
-</details>
 
-<details>
-<summary><strong>Permission denied</strong></summary>
+### Port Conflicts
+```yaml
+# In docker-compose.yml, change ports:
+services:
+  app:
+    ports:
+      - "8200:8100"  # Change 8200 to any available port
+```
 
+### WebSocket Connection Issues
+```javascript
+// Check browser console for errors
+// Verify WebSocket URL matches your server
+const ws = new WebSocket('ws://localhost:8100/ws');
+```
+
+### Memory Issues
 ```bash
-# Make script executable
-chmod +x launch-claude-env.sh
-
-# Or run with bash
-bash launch-claude-env.sh
+# Increase Docker memory limit
+docker-compose down
+# Edit docker-compose.yml to add memory limits
+docker-compose up -d
 ```
+
 </details>
-
-<details>
-<summary><strong>Container already exists</strong></summary>
-
-The script automatically detects and reattaches to existing sessions. To force a new session:
-```bash
-docker stop claude-swarm-session-your-project
-docker rm claude-swarm-session-your-project
-```
-</details>
-
-<details>
-<summary><strong>API key issues</strong></summary>
-
-Check that your API key is properly configured:
-- Valid and active subscription
-- Correctly set in environment
-- No extra spaces or quotes
-</details>
-
-### 📋 Logs and Debugging
-
-All execution logs are stored in:
-```
-your-project/.claude-flow-swarm/claude-swarm-YYYYMMDD-HHMMSS.log
-```
-
-View logs in real-time:
-```bash
-tail -f your-project/.claude-flow-swarm/claude-swarm-*.log
-```
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how you can help:
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-1. 🐛 **Report bugs** - Open an issue with reproduction steps
-2. 💡 **Suggest features** - Share your ideas in discussions
-3. 🔧 **Submit PRs** - Fork, branch, and submit pull requests
-4. 📚 **Improve docs** - Help make this README even better
-5. ⭐ **Star the project** - Help others discover it
+### Development Workflow
+
+```mermaid
+gitGraph
+    commit id: "main"
+    branch feature/new-feature
+    checkout feature/new-feature
+    commit id: "Add feature"
+    commit id: "Add tests"
+    checkout main
+    merge feature/new-feature
+    commit id: "Release v1.1"
+```
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgements
+## 🙏 Acknowledgments
 
-- The [claude-flow](https://github.com/ruvnet/claude-code-flow) team for the powerful engine
-- The Claude team at Anthropic for the incredible AI models
-- The open-source community for continuous inspiration
+- [Anthropic](https://anthropic.com) for Claude API
+- [Google](https://ai.google.dev) for Gemini API
+- [OpenAI](https://openai.com) for GPT API
+- All contributors and community members
 
 ---
 
-<p align="center">
-  <strong>Ready to revolutionise your development workflow?</strong><br>
-  <a href="#-quick-start">Get Started</a> •
-  <a href="https://github.com/your-repo/issues">Report Issue</a> •
-  <a href="https://github.com/your-repo/discussions">Join Discussion</a>
-</p>
+<div align="center">
+
+Made with ❤️ by the Claude Swarm community
+
+[⬆ Back to Top](#claude-swarm-launcher-)
+
+</div>

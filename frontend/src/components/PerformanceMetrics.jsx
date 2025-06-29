@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+
 import {
   TrendingUp,
   Activity,
@@ -16,7 +16,7 @@ import {
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from 'recharts';
 import clsx from 'clsx';
 
-const MetricCard = ({ title, value, icon: Icon, color, unit }) => (
+const MetricCard = ({ title, value, color, unit }) => (
   <motion.div
     whileHover={{ scale: 1.02, y: -2 }}
     className={clsx('metric-card', color)}

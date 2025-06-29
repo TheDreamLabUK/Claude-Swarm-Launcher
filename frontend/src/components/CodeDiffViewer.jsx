@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   FileText,
   Eye,
@@ -189,7 +189,7 @@ const SplitView = ({ originalContent, modifiedContent, language }) => (
   </div>
 );
 
-const UnifiedView = ({ diffLines, language }) => (
+const UnifiedView = ({ diffLines }) => (
   <div className="unified-view">
     <div className="diff-content">
       {diffLines.map((line, index) => (
@@ -205,7 +205,7 @@ const UnifiedView = ({ diffLines, language }) => (
   </div>
 );
 
-const CodeDiffViewer = ({ fileChanges, selectedFile, onFileSelect, viewMode = 'unified' }) => {
+const CodeDiffViewer = ({ fileChanges, viewMode = 'unified' }) => {
   const [expandedFiles, setExpandedFiles] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   FileText,
   FolderOpen,
@@ -206,7 +206,7 @@ const FileTreeView = ({ files, onFileSelect, selectedFile }) => {
   );
 };
 
-const StatsSummary = ({ files, agentStates }) => {
+const StatsSummary = ({ files }) => {
   const stats = useMemo(() => {
     const totalFiles = files.length;
     const byType = files.reduce((acc, file) => {
@@ -314,7 +314,7 @@ const StatsSummary = ({ files, agentStates }) => {
   );
 };
 
-const FileModificationSummary = ({ fileChanges, agentStates }) => {
+const FileModificationSummary = ({ fileChanges }) => {
   const [viewMode, setViewMode] = useState('list'); // list, tree, diff
   const [expandedFiles, setExpandedFiles] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -475,7 +475,7 @@ const FileModificationSummary = ({ fileChanges, agentStates }) => {
         </select>
       </div>
 
-      <StatsSummary files={filteredFiles} agentStates={agentStates} />
+      <StatsSummary files={filteredFiles} />
 
       <div className="summary-content">
         {viewMode === 'list' && (

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+
 import {
   DollarSign,
   TrendingUp,
@@ -17,7 +17,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Cell, LineChart, Line, Area, AreaChart } from 'recharts';
 import clsx from 'clsx';
 
-const CostCard = ({ title, value, change, icon: Icon, color, subtitle }) => (
+const CostCard = ({ title, value, change, color, subtitle }) => (
   <motion.div
     whileHover={{ scale: 1.02, y: -2 }}
     className={clsx('cost-card', color)}
@@ -54,7 +54,7 @@ const TokenUsageChart = ({ data, height = 300 }) => (
         <YAxis />
         <Tooltip
           labelFormatter={(value) => new Date(value).toLocaleString()}
-          formatter={(value, name) => [value.toLocaleString(), 'Tokens']}
+          formatter={(value) => [value.toLocaleString(), 'Tokens']}
         />
         <Area
           type="monotone"
@@ -68,7 +68,7 @@ const TokenUsageChart = ({ data, height = 300 }) => (
   </div>
 );
 
-const CostBreakdownChart = ({ agentStates, modelConfigs }) => {
+const CostBreakdownChart = ({ agentStates }) => {
   const data = useMemo(() => {
     return Object.entries(agentStates).map(([agentName, state]) => ({
       name: agentName.charAt(0).toUpperCase() + agentName.slice(1),
@@ -237,7 +237,7 @@ const CostProjection = ({ performanceData, currentCost }) => {
   );
 };
 
-const CostOptimizationSuggestions = ({ agentStates, modelConfigs }) => {
+const CostOptimizationSuggestions = ({ agentStates }) => {
   const suggestions = useMemo(() => {
     const tips = [];
 
@@ -257,7 +257,7 @@ const CostOptimizationSuggestions = ({ agentStates, modelConfigs }) => {
 
     // Check for inefficient token usage
     const inefficientAgents = Object.entries(agentStates)
-      .filter(([_, state]) => state.tokensUsed > 0 && (state.estimatedCost / state.tokensUsed * 1000) > 0.005)
+      .filter(([, state]) => state.tokensUsed > 0 && (state.estimatedCost / state.tokensUsed * 1000) > 0.005)
       .map(([name]) => name);
 
     if (inefficientAgents.length > 0) {
@@ -278,7 +278,7 @@ const CostOptimizationSuggestions = ({ agentStates, modelConfigs }) => {
     });
 
     return tips;
-  }, [agentStates, modelConfigs]);
+  }, [agentStates]);
 
   const getIconForType = (type) => {
     switch (type) {
@@ -492,7 +492,6 @@ const CostTracker = ({ agentStates, modelConfigs, totalCost, performanceData }) 
         <div className="optimization-content">
           <CostOptimizationSuggestions
             agentStates={agentStates}
-            modelConfigs={modelConfigs}
           />
         </div>
       )}

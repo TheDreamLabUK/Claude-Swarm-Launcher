@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   Brain,
   Zap,
@@ -21,7 +21,6 @@ const ModelCard = ({
   modelConfig,
   isSelected,
   onSelect,
-  agentType,
   disabled
 }) => {
   const [showDetails, setShowDetails] = useState(false);

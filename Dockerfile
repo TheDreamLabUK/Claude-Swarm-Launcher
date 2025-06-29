@@ -57,8 +57,9 @@ COPY --chown=appuser:appuser ./frontend /home/appuser/app/frontend
 
 # Install frontend dependencies and build
 WORKDIR /home/appuser/app/frontend
-RUN npm install
+RUN npm install --legacy-peer-deps
 RUN npm run build
+RUN ls -la /home/appuser/app/frontend/dist
 
 # Set up final working directory
 WORKDIR /home/appuser/app

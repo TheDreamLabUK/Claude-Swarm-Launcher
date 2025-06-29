@@ -9,8 +9,11 @@ class GeminiAgent(BaseAgent):
         if not self.model:
             self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
         self.env["GEMINI_MODEL"] = self.model
+        self.env["GEMINI_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
 
     async def execute(self, prompt: str):
         """Executes the Gemini CLI command."""
-        command = f'gemini --model {self.model} "{prompt}"'
+        # Using the official @google/gemini-cli tool
+        # Model is set via GEMINI_MODEL env var
+        command = f'gemini "{prompt}"'
         await self._run_command(command)

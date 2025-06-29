@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   Activity,
   GitBranch,
@@ -243,7 +243,7 @@ function App() {
     } catch (error) {
       return { success: false, message: `Network error: ${error.message}` };
     }
-  }, [API_BASE_URL]);
+  }, [API_BASE_URL, fetchStoredKeys]);
 
   const fetchStoredKeys = useCallback(async () => {
     try {
@@ -324,7 +324,7 @@ function App() {
     startMetricsCollection();
 
     return { success: true, message: 'Project started successfully' };
-  }, [projectConfig, WS_URL]);
+  }, [projectConfig, WS_URL, handleWebSocketMessage, startMetricsCollection]);
 
   const handleWebSocketMessage = useCallback((event) => {
     const data = JSON.parse(event.data);
@@ -390,7 +390,7 @@ function App() {
     setIsProjectRunning(false);
     setProjectPhase('stopped');
     stopMetricsCollection();
-  }, []);
+  }, [stopMetricsCollection]);
 
   const startMetricsCollection = useCallback(() => {
     metricsInterval.current = setInterval(() => {
@@ -407,14 +407,14 @@ function App() {
 
       setPerformanceData(prev => [...prev.slice(-50), newDataPoint]);
     }, 5000);
-  }, [agentStates]);
+  }, [agentStates, startMetricsCollection]);
 
   const stopMetricsCollection = useCallback(() => {
     if (metricsInterval.current) {
       clearInterval(metricsInterval.current);
       metricsInterval.current = null;
     }
-  }, []);
+  }, [stopMetricsCollection]);
 
   // Effects
   useEffect(() => {
